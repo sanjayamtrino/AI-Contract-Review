@@ -84,7 +84,7 @@ def setup_logging() -> None:
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger with the specified name."""
-    return logging.getLogger(f"youtube_websub.{name}")
+    return logging.getLogger(f"AI_Contract.{name}")
 
 
 class Logger:
