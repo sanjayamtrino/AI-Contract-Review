@@ -3,15 +3,23 @@ name = "AI Contract Review"
 version = "0.0.1"
 description = "An AI-powered tool for reviewing and analyzing contracts."
 package-mode = false
+packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.8"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.scripts]
+contract-api = "src.api.main:main_entry"
+
+[tool.poetry.group.dev.dependencies]
 black = "*"
 isort = "*"
 mypy = "*"
 flake8 = "*"
+pydantic = "*"
+pydantic-settings = "*" 
+fastapi = "*" 
+uvicorn = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -47,7 +55,7 @@ include_trailing_comma = true
 multi_line_output = 3
 
 [tool.mypy]
-python_version = 3.8
+python_version = "3.8"
 check_untyped_defs = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
