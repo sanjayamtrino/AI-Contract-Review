@@ -3,7 +3,7 @@ name = "AI Contract Review"
 version = "0.0.1"
 description = "An AI-powered tool for reviewing and analyzing contracts."
 package-mode = false
-packages = [{include = "src"}]
+packages = [{ include = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.8"
@@ -17,16 +17,18 @@ isort = "*"
 mypy = "*"
 flake8 = "*"
 pydantic = "*"
-pydantic-settings = "*" 
-fastapi = "*" 
+pydantic-settings = "*"
+fastapi = "*"
 uvicorn = "*"
+python-docx = "*"
+python-multipart = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.black]
-line-length = 88
+line-length = 200
 target-version = ['py38']
 include = '\.pyi?$'
 exclude = '''
@@ -45,7 +47,7 @@ exclude = '''
 
 [tool.isort]
 profile = "black"
-line_length = 88
+line_length = 200
 known_first_party = ["your_package_name"]
 known_third_party = ["pymongo"]
 default_section = "THIRDPARTY"

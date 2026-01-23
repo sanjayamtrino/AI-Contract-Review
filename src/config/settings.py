@@ -8,6 +8,11 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application configuration settings."""
 
+    # API settings
+    api_host: str = Field(default="localhost", description="API host address")
+    api_port: int = Field(default=8000, description="API port number")
+    debug: bool = Field(default=False, description="Enable or disable debug mode")
+
     # Storage paths
     logs_directory: str = Field(default="./logs", description="Directory for application logs")
 
@@ -21,7 +26,7 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached application settings instance."""
 
-    return Settings() 
+    return Settings()
 
 
 def ensure_directories() -> None:

@@ -2,7 +2,7 @@ import logging
 import logging.config
 import os
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict
 
 from src.config.settings import get_settings
 
@@ -20,15 +20,11 @@ def setup_logging() -> None:
         f"AI_Contract_Review_{datetime.now().strftime('%Y%m%d')}.log",
     )
 
-    logging_config: dict[str, Any] = {
+    logging_config: Dict[str, Any] = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
-            "detailed": {
-                "format": (
-                    "%(asctime)s - %(name)s - %(levelname)s - "
-                    "%(filename)s:%(lineno)d - %(funcName)s - %(message)s")
-            },
+            "detailed": {"format": ("%(asctime)s - %(name)s - %(levelname)s - " "%(filename)s:%(lineno)d - %(funcName)s - %(message)s")},
             "simple": {"format": "%(asctime)s - %(levelname)s - %(message)s"},
             "json": {
                 "format": (
