@@ -3,9 +3,16 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from docx.document import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from src.config.logging import Logger
 from src.config.settings import get_settings
+from src.exceptions.parser_exceptions import (
+    DocxCleaningException,
+    DocxMetadataExtractionException,
+    DocxParagraphExtractionException,
+    DocxTableExtractionException,
+)
 from src.schemas.registry import Chunk, ParseResult
 from src.services.registry.base_parser import BaseParser
 
@@ -30,6 +37,7 @@ class DocxParser(BaseParser, Logger):
             self.logger.debug("Document cleaned successfully.")
         except Exception as e:
             self.logger.error(f"Error cleaning document: {e}")
+            raise DocxCleaningException(f"Error cleaning document: {e}") from e
 
     async def _extract_metadata(self, document: Document) -> Dict[str, Any]:
         """Extract metadata about the document."""
@@ -55,7 +63,7 @@ class DocxParser(BaseParser, Logger):
             return metadata
         except Exception as e:
             self.logger.error(f"Error extracting metadata: {e}")
-            return {"source": "docx", "error": "Metadata extraction failed"}
+            raise DocxMetadataExtractionException(f"Error extracting metadata: {e}") from e
 
     async def _extract_paragraphs(self, document: Document) -> List[Dict[str, Any]]:
         """Extract paragraphs from the document."""
@@ -75,8 +83,63 @@ class DocxParser(BaseParser, Logger):
 
         except Exception as e:
             self.logger.error(f"Error extracting paragraphs: {e}")
+            raise DocxParagraphExtractionException(f"Error extracting paragraphs: {e}") from e
 
         return paragraphs_data
+
+    async def _extract_images(self, document: Document) -> List[Dict[str, Any]]:
+        """Extract images from the document."""
+
+        return []
+
+    async def _extract_tables(self, document: Document) -> List[Dict[str, Any]]:
+        """Extract tables from the document."""
+
+        tables_data: List[Dict[str, Any]] = []
+
+        try:
+            for table_index, table in enumerate(document.tables):
+                table_content = []
+                for row in table.rows:
+                    row_data = [cell.text.strip() for cell in row.cells]
+                    table_content.append(row_data)
+
+                tables_data.append(
+                    {
+                        "table_index": table_index,
+                        "content": table_content,
+                    }
+                )
+
+        except Exception as e:
+            self.logger.error(f"Error extracting tables: {e}")
+            raise DocxTableExtractionException(f"Error extracting tables: {e}") from e
+
+        return tables_data
+
+    async def _get_text_splitter(self) -> RecursiveCharacterTextSplitter:
+        """Get the text splitter for chunking the document content."""
+
+        return RecursiveCharacterTextSplitter(
+            chunk_size=self.settings.chunk_size,
+            chunk_overlap=self.settings.chunk_overlap,
+            separators=[
+                "\n\n\n",  # Multiple newlines (section breaks)
+                "\n\n",  # Paragraph breaks
+                "\n",  # Line breaks
+                ". ",  # Sentence ends
+                "! ",  # Exclamation
+                "? ",  # Question
+                "; ",  # Semicolon
+                ": ",  # Colon
+                ", ",  # Comma
+                " ",  # Space
+                "",  # Character level (last resort)
+            ],
+            length_function=len,
+            keep_separator=True,
+            is_separator_regex=False,
+        )
 
     async def parse(self, document: Document) -> ParseResult:
         """Parse the DOCX data."""
@@ -95,27 +158,33 @@ class DocxParser(BaseParser, Logger):
             # Extract paragraphs
             paragraphs = await self._extract_paragraphs(document=document)
 
+            # Extract tables
+            # tables = await self._extract_tables(document=document)
+
             full_text = "\n\n".join([p["content"] for p in paragraphs])
+
+            # full_tables_text = "\n\n".join(["\n".join(["\t".join(row) for row in table["content"]]) for table in tables])
+            # print(full_tables_text)
+
+            # We need to perform the chunking here and create list of chunks
+            # ------------------------------------
+
+            text_splitter = await self._get_text_splitter()
+
+            texts: List[str] = text_splitter.split_text(full_text)
+            chunks: List[Chunk] = []
+
+            for index, text in enumerate(texts):
+                self.logger.debug(f"Chunk created with length {len(text)}.")
+
+                chunk = Chunk(chunk_id=None, document_id=None, chunk_index=index, content=text, embedding_model=None, embedding_vector=None, metadata={}, created_at=datetime.utcnow().isoformat())
+                chunks.append(chunk)
 
             processing_time = time.time() - start_time
 
-            # We need to perform the chunking here
-            # ------------------------------------
-
-            chunk = Chunk(
-                chunk_id=None,
-                document_id=None,
-                chunk_index=0,
-                content=full_text,
-                embedding_vector=None,
-                embedding_model=None,
-                metadata={},
-                created_at=datetime.utcnow().isoformat(),
-            )
-
             return ParseResult(
                 success=True,
-                chunks=[chunk],
+                chunks=chunks,
                 metadata=metadata,
                 error_message=None,
                 processing_time=processing_time,

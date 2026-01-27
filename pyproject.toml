@@ -6,7 +6,7 @@ package-mode = false
 packages = [{ include = "src" }]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "3.10"
 
 [tool.poetry.scripts]
 contract-api = "src.api.main:main_entry"
@@ -22,6 +22,8 @@ fastapi = "*"
 uvicorn = "*"
 python-docx = "*"
 python-multipart = "*"
+langchain = "*"
+langchain-community = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -29,7 +31,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.black]
 line-length = 200
-target-version = ['py38']
+target-version = ['py310']
 include = '\.pyi?$'
 exclude = '''
 /(\.
@@ -67,7 +69,7 @@ warn_unused_configs = true
 warn_unused_ignores = true
 
 [tool.flake8]
-max-line-length = 88
+max-line-length = 200
 extend-ignore = "E203, W503"
 exclude = ".git,__pycache__,build,dist,.venv"
 max-complexity = 10

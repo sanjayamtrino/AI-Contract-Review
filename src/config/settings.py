@@ -1,5 +1,6 @@
 import os
 from functools import lru_cache
+from typing import Union
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -12,6 +13,13 @@ class Settings(BaseSettings):
     api_host: str = Field(default="localhost", description="API host address")
     api_port: int = Field(default=8000, description="API port number")
     debug: bool = Field(default=False, description="Enable or disable debug mode")
+
+    # Chunking Settings
+    chunk_size: int = Field(default=1000, description="Size of each text chunk")
+    chunk_overlap: int = Field(default=200, description="Overlap size between text chunks")
+
+    # LLM Settings
+    gemini_api_key: Union[str, None] = Field(default=None, description="API key for Gemini LLM Model.")
 
     # Storage paths
     logs_directory: str = Field(default="./logs", description="Directory for application logs")

@@ -51,6 +51,10 @@ This application leverages AI to assist users in reviewing contracts efficiently
 
       `main.py` - Main API's handler.
 
+### Log Format
+
+`timestamp - logger_name - level - file:line - function - message`
+
 **NOTE: Log files are generated per day not per run**
 
 ## Application setup
@@ -63,3 +67,4 @@ This application leverages AI to assist users in reviewing contracts efficiently
    4. `poetry env activate`
 3. Run the application:
    1. `poetry run python -m src.api.main`
+4. Go to `http://localhost:8000/docs/` and test things out.
