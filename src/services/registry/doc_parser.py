@@ -1,7 +1,9 @@
 import time
 from datetime import datetime
+from io import BytesIO
 from typing import Any, Dict, List
 
+from docx import Document as DocxDocument
 from docx.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
@@ -15,6 +17,7 @@ from src.exceptions.parser_exceptions import (
 )
 from src.schemas.registry import Chunk, ParseResult
 from src.services.registry.base_parser import BaseParser
+from src.services.vector_store.embedding_service import HuggingFaceEmbeddingService
 
 
 class DocxParser(BaseParser, Logger):
@@ -25,6 +28,7 @@ class DocxParser(BaseParser, Logger):
 
         super().__init__()
         self.settings = get_settings()
+        self.embedding_service = HuggingFaceEmbeddingService()
 
     async def clean_document(self, document: Document) -> None:
         """Clean the document before parsing to remove unwanted elements."""
@@ -177,7 +181,19 @@ class DocxParser(BaseParser, Logger):
             for index, text in enumerate(texts):
                 self.logger.debug(f"Chunk created with length {len(text)}.")
 
-                chunk = Chunk(chunk_id=None, document_id=None, chunk_index=index, content=text, embedding_model=None, embedding_vector=None, metadata={}, created_at=datetime.utcnow().isoformat())
+                # Embedd the text
+                vector_data = await self.embedding_service.generate_embeddings(text=text)
+
+                chunk = Chunk(
+                    chunk_id=None,
+                    document_id=None,
+                    chunk_index=index,
+                    content=text,
+                    embedding_model=self.embedding_service.model_name,
+                    embedding_vector=vector_data,
+                    metadata={},
+                    created_at=datetime.utcnow().isoformat(),
+                )
                 chunks.append(chunk)
 
             processing_time = time.time() - start_time
@@ -198,3 +214,62 @@ class DocxParser(BaseParser, Logger):
                 error_message=str(e),
                 processing_time=0.0,
             )
+
+    async def _get_health_status(self) -> Dict[str, Any]:
+        """Get the health status of the DOCX parser."""
+
+        status: str = "healthy"
+        info: Dict[str, Any] = {}
+
+        # Settings accessibility check
+        try:
+            _ = self.settings.chunk_size
+            _ = self.settings.chunk_overlap
+            info["settings_accessible"] = True
+        except Exception as e:
+            status = "unhealthy"
+            info["settings_accessible"] = False
+            info["error"] = str(e)
+
+        # Text splitter check
+        try:
+            _ = await self._get_text_splitter()
+            info["text_splitter_accessible"] = True
+        except Exception as e:
+            status = "unhealthy"
+            info["text_splitter_accessible"] = False
+            info["error"] = str(e)
+
+        # DOCX test parsing check
+        try:
+
+            sample_docx = BytesIO()
+            doc = DocxDocument()
+            doc.add_paragraph("This is a test paragraph.")
+            doc.save(sample_docx)
+            sample_docx.seek(0)
+
+            document = DocxDocument(sample_docx)
+            parse_result = await self.parse(document=document)
+
+            if parse_result.success:
+                info["docx_parsing"] = "successful"
+            else:
+                status = "unhealthy"
+                info["docx_parsing"] = "failed"
+                info["error"] = parse_result.error_message
+        except Exception as e:
+            status = "unhealthy"
+            info["docx_parsing"] = "failed"
+            info["error"] = str(e)
+
+        return {
+            "status": status,
+            "info": info,
+        }
+
+    async def is_healthy(self) -> bool:
+        """Checks if the Parser is in healthy condition."""
+
+        status: Dict[str, Any] = await self._get_health_status()
+        return True if status.get("status", "") == "healthy" else False

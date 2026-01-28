@@ -1,6 +1,6 @@
 import time
 from io import BytesIO
-from typing import Union
+from typing import Any, Dict, Union
 
 from docx import Document
 
@@ -37,3 +37,16 @@ class IngestionService(Logger):
         parsed_data.processing_time = time.time() - start_time
         self.logger.info(f"Data parsed in {parsed_data.processing_time:.2f} seconds.")
         return parsed_data
+
+    async def _get_health_status(self) -> Dict[str, Any]:
+        """Get the health status of the ingestion service."""
+
+        parser = self.registry.get_parser()
+        health_info: Dict[str, Any] = {
+            "parser_accessible": await parser.is_healthy() if parser else False,
+            "vector_store_accessible": self.vector_store is not None,
+        }
+
+        health_info["status"] = health_info["parser_accessible"] and health_info["vector_store_accessible"]
+
+        return health_info

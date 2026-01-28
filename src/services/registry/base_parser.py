@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 from docx.document import Document
 
@@ -17,4 +18,9 @@ class BaseParser(ABC, Logger):
     @abstractmethod
     async def clean_document(self, document: Document) -> None:
         """Clean the document before parsing."""
+        pass
+
+    @abstractmethod
+    def is_healthy(self) -> Any:
+        """Get the health status of the parser."""
         pass
