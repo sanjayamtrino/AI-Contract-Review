@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict
 
+from src.config.context import correlation_id_ctx
 from src.config.settings import get_settings
 
 
@@ -28,9 +29,15 @@ def setup_logging() -> None:
             "simple": {"format": "%(asctime)s - %(levelname)s - %(message)s"},
             "json": {
                 "format": (
-                    '{"timestamp": "%(asctime)s", "logger": "%(name)s", '
-                    '"level": "%(levelname)s", "file": "%(filename)s", '
-                    '"line": %(lineno)d, "function": "%(funcName)s", '
+                    '{"timestamp": "%(asctime)s", '
+                    '"correlation_id": "%(correlation_id)s", '
+                    '"service": "%(service)s", '
+                    '"env": "%(env)s", '
+                    '"logger": "%(name)s", '
+                    '"level": "%(levelname)s", '
+                    '"file": "%(filename)s", '
+                    '"line": %(lineno)d, '
+                    '"function": "%(funcName)s", '
                     '"message": "%(message)s"}'
                 )
             },
@@ -79,8 +86,20 @@ def setup_logging() -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Get a logger with the specified name."""
-    return logging.getLogger(f"AI_Contract.{name}")
+    base_logger = logging.getLogger(f"AI_Contract.{name}")
+    return CorrelationLogger(base_logger, {})
+
+    # return logging.getLogger(f"AI_Contract.{name}")
+
+
+class CorrelationLogger(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        extra = kwargs.get("extra", {})
+        extra.setdefault("correlation_id", correlation_id_ctx.get())
+        extra.setdefault("service", "contract-review")
+        extra.setdefault("env", "local")
+        kwargs["extra"] = extra
+        return msg, kwargs
 
 
 class Logger:
