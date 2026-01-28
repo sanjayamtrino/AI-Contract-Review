@@ -21,6 +21,7 @@ from src.services.vector_store.embedding_service import (
     BGEEmbeddingService,
     HuggingFaceEmbeddingService,
 )
+from src.services.vector_store.gemini_embeddings import GeminiEmbeddingService
 
 
 class DocxParser(BaseParser, Logger):
@@ -31,8 +32,9 @@ class DocxParser(BaseParser, Logger):
 
         super().__init__()
         self.settings = get_settings()
-        self.embedding_service = HuggingFaceEmbeddingService()
+        # self.embedding_service = HuggingFaceEmbeddingService()
         # self.embedding_service = BGEEmbeddingService()
+        self.embedding_service = GeminiEmbeddingService()
 
     async def clean_document(self, document: Document) -> None:
         """Clean the document before parsing to remove unwanted elements."""

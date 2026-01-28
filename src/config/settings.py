@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     # LLM Settings
     gemini_api_key: Union[str, None] = Field(default=None, description="API key for Gemini LLM Model.")
+    gemini_embedding_model: str = Field(default="gemini-embedding-001", description="Gemini Embedding model used.")
+
+    # Hugging Face Settings
+    hugggingface_embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2", description="Hugging Face Embedding Model.")
 
     # Storage paths
     logs_directory: str = Field(default="./logs", description="Directory for application logs")

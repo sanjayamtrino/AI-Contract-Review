@@ -25,6 +25,7 @@ python-multipart = "*"
 langchain = "*"
 langchain-community = "*"
 sentence-transformers = "*"
+google-genai = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
