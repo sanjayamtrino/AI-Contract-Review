@@ -16,7 +16,7 @@ class HuggingFaceEmbeddingService(Logger):
         """Initiliaze the Service."""
 
         self.settings = get_settings()
-        self.model_name = "sentence-transformers/all-MiniLM-L6-v2"
+        self.model_name = self.settings.hugggingface_embedding_model
 
         self.tokenizer = SentenceTransformer(model_name_or_path=self.model_name)
 

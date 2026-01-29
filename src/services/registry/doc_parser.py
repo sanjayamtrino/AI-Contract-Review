@@ -17,11 +17,14 @@ from src.exceptions.parser_exceptions import (
 )
 from src.schemas.registry import Chunk, ParseResult
 from src.services.registry.base_parser import BaseParser
-from src.services.vector_store.embedding_service import (
+from src.services.vector_store.embeddings.embedding_service import (
     BGEEmbeddingService,
     HuggingFaceEmbeddingService,
 )
-from src.services.vector_store.gemini_embeddings import GeminiEmbeddingService
+from src.services.vector_store.embeddings.gemini_embeddings import (
+    GeminiEmbeddingService,
+)
+from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
 
 
 class DocxParser(BaseParser, Logger):
@@ -34,7 +37,8 @@ class DocxParser(BaseParser, Logger):
         self.settings = get_settings()
         # self.embedding_service = HuggingFaceEmbeddingService()
         # self.embedding_service = BGEEmbeddingService()
-        self.embedding_service = GeminiEmbeddingService()
+        # self.embedding_service = GeminiEmbeddingService()
+        self.embedding_service = OpenAIEmbeddings()
 
     async def clean_document(self, document: Document) -> None:
         """Clean the document before parsing to remove unwanted elements."""

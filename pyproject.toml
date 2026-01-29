@@ -26,6 +26,8 @@ langchain = "*"
 langchain-community = "*"
 sentence-transformers = "*"
 google-genai = "*"
+faiss-cpu = "*"
+openai = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

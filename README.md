@@ -59,6 +59,8 @@ This application leverages AI to assist users in reviewing contracts efficiently
 
 ## Application setup
 
+**Note: Python version needs to be >3.8 and <=3.10**
+
 1. clone the repo
 2. Run:
    1. `pip install poetry`
@@ -68,3 +70,7 @@ This application leverages AI to assist users in reviewing contracts efficiently
 3. Run the application:
    1. `poetry run python -m src.api.main`
 4. Go to `http://localhost:8000/docs/` and test things out.
+
+## Test the embeddings similarity
+
+1. `poetry run python -m tests.test_embeddings`
