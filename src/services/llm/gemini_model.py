@@ -13,7 +13,6 @@ class GeminiModel(BaseLLMModel, Logger):
 
         super().__init__()
         self.settings = get_settings()
-        self.client = None
 
     async def generate(self, prompt: str, context: Dict[str, Any]) -> str:
         return ""

@@ -1,3 +1,4 @@
+import asyncio
 import time
 from typing import Any, Dict, List
 
@@ -16,7 +17,7 @@ class HuggingFaceEmbeddingService(Logger):
         """Initiliaze the Service."""
 
         self.settings = get_settings()
-        self.model_name = self.settings.hugggingface_embedding_model
+        self.model_name = self.settings.hugggingface_minilm_embedding_model
 
         self.tokenizer = SentenceTransformer(model_name_or_path=self.model_name)
 
@@ -125,7 +126,7 @@ class BGEEmbeddingService(Logger):
             start_time = time.time()
 
             # Run model in thread pool to avoid blocking async loop
-            embedding = await torch.to_thread(self._embed_text, text)
+            embedding = await asyncio.to_thread(self._embed_text, text)
 
             generation_time = time.time() - start_time
             self.stats["embeddings_generated"] += 1

@@ -17,13 +17,14 @@ from src.exceptions.parser_exceptions import (
 )
 from src.schemas.registry import Chunk, ParseResult
 from src.services.registry.base_parser import BaseParser
-from src.services.vector_store.embeddings.embedding_service import (
-    BGEEmbeddingService,
-    HuggingFaceEmbeddingService,
-)
-from src.services.vector_store.embeddings.gemini_embeddings import (
-    GeminiEmbeddingService,
-)
+
+# from src.services.vector_store.embeddings.embedding_service import (
+#     BGEEmbeddingService,
+#     HuggingFaceEmbeddingService,
+# )
+# from src.services.vector_store.embeddings.gemini_embeddings import (
+#     GeminiEmbeddingService,
+# )
 from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
 
 

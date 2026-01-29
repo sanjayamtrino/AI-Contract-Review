@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     openai_embedding_model: str = Field(default="text-embedding-3-small", description="OPENAI Embedding model used.")
 
     # Hugging Face Settings
-    hugggingface_embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2", description="Hugging Face Embedding Model.")
+    hugggingface_minilm_embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2", description="Hugging Face Embedding Model.")
+    hugggingface_qwen_embedding_model: str = Field(default="Qwen/Qwen3-Embedding-0.6B", description="Qwen3 0.6B model from Hugging Face.")
 
     # Vector Database settings
     db_dimention: int = Field(default=1024, description="Dimention of the vector to store.")
