@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     logs_directory: str = Field(default="./logs", description="Directory for application logs")
 
     class Config:
-        env_file = ".env"
+        env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
         env_file_encoding = "utf-8"
         extra = "ignore"
 

@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 
 from docx import Document as DocxDocument
 from docx.document import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.config.logging import Logger
 from src.config.settings import get_settings

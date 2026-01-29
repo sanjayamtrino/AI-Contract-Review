@@ -7,6 +7,11 @@ packages = [{ include = "src" }]
 
 [tool.poetry.dependencies]
 python = "3.10"
+langchain = "^1.2.7"
+langchain-core = "^1.2.7"
+langchain-google-genai = "^4.2.0"
+pydantic = "^2.12.5"
+langchain-text-splitters = "^1.1.0"
 
 [tool.poetry.scripts]
 contract-api = "src.api.main:main_entry"
