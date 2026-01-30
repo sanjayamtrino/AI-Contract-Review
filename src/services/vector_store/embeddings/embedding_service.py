@@ -102,6 +102,10 @@ class HuggingFaceEmbeddingService(BaseEmbeddingService, Logger):
             )
 
 
+service = HuggingFaceEmbeddingService()
+print(service.get_embedding_dimensions())
+
+
 # Too expensive and consuming a lot of resources.
 class BGEEmbeddingService(Logger):
     """Local BGE Embedding service."""

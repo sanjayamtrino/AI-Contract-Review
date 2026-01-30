@@ -52,3 +52,25 @@ class FAISSVectorStore(BaseVectorStore, Logger):
             self.logger.info(f"Added {vector.shape[0]} vector in {elapsed_time:.4f}s")
         except Exception as e:
             raise ValueError("Unable to index embeddings into database.") from e
+
+    async def search_index(self, query_embedding: List[float], top_k: int = 5) -> Dict[str, Any]:
+        """Perform cosine similarity and return the top-k indices."""
+
+        if not query_embedding:
+            raise ValueError("Query Embedding cannot be empty.")
+
+        try:
+            query = np.array(query_embedding, dtype=np.float32)
+
+            start_time = time.time()
+            query = self._validate_vectors(query)
+            scores, indices = self.index.search(query, top_k)
+            elapsed_time = time.time() - start_time
+
+            return {
+                "scores": scores[0].tolist(),
+                "indices": indices[0].tolist(),
+                "search_time": elapsed_time,
+            }
+        except Exception as e:
+            raise ValueError("Unable to search the query in the database.") from e

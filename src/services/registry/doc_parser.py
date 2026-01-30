@@ -21,7 +21,7 @@ from src.services.vector_store.embeddings.embedding_service import (
     # BGEEmbeddingService,
     HuggingFaceEmbeddingService,
 )
-from src.services.vector_store.faiss_db import FAISSVectorStore
+from src.services.vector_store.manager import get_faiss_vector_store
 
 # from src.services.vector_store.embeddings.gemini_embeddings import (
 #     GeminiEmbeddingService,
@@ -41,7 +41,7 @@ class DocxParser(BaseParser, Logger):
         # self.embedding_service = BGEEmbeddingService()
         # self.embedding_service = GeminiEmbeddingService()
         # self.embedding_service = OpenAIEmbeddings()
-        self.vector_store = FAISSVectorStore(embedding_dimension=self.embedding_service.get_embedding_dimensions())
+        self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
 
     async def clean_document(self, document: Document) -> None:
         """Clean the document before parsing to remove unwanted elements."""
