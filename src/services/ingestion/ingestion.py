@@ -33,7 +33,7 @@ class IngestionService(Logger):
 
         start_time = time.time()
         document = Document(data)
-        parsed_data = await parser.parse(document=document)
+        parsed_data: ParseResult = await parser.parse(document=document)
         parsed_data.processing_time = time.time() - start_time
         self.logger.info(f"Data parsed in {parsed_data.processing_time:.2f} seconds.")
         return parsed_data

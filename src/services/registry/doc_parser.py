@@ -17,15 +17,16 @@ from src.exceptions.parser_exceptions import (
 )
 from src.schemas.registry import Chunk, ParseResult
 from src.services.registry.base_parser import BaseParser
+from src.services.vector_store.embeddings.embedding_service import (
+    # BGEEmbeddingService,
+    HuggingFaceEmbeddingService,
+)
+from src.services.vector_store.faiss_db import FAISSVectorStore
 
-# from src.services.vector_store.embeddings.embedding_service import (
-#     BGEEmbeddingService,
-#     HuggingFaceEmbeddingService,
-# )
 # from src.services.vector_store.embeddings.gemini_embeddings import (
 #     GeminiEmbeddingService,
 # )
-from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
+# from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
 
 
 class DocxParser(BaseParser, Logger):
@@ -36,10 +37,11 @@ class DocxParser(BaseParser, Logger):
 
         super().__init__()
         self.settings = get_settings()
-        # self.embedding_service = HuggingFaceEmbeddingService()
+        self.embedding_service = HuggingFaceEmbeddingService()
         # self.embedding_service = BGEEmbeddingService()
         # self.embedding_service = GeminiEmbeddingService()
-        self.embedding_service = OpenAIEmbeddings()
+        # self.embedding_service = OpenAIEmbeddings()
+        self.vector_store = FAISSVectorStore(embedding_dimention=self.embedding_service.get_embedding_dimentions())
 
     async def clean_document(self, document: Document) -> None:
         """Clean the document before parsing to remove unwanted elements."""
@@ -193,7 +195,8 @@ class DocxParser(BaseParser, Logger):
                 self.logger.debug(f"Chunk created with length {len(text)}.")
 
                 # Embedd the text
-                vector_data = await self.embedding_service.generate_embeddings(text=text)
+                vector_data: List[float] = await self.embedding_service.generate_embeddings(text=text)
+                self.vector_store.add(embeddings=vector_data)
 
                 chunk = Chunk(
                     chunk_id=None,
@@ -225,6 +228,18 @@ class DocxParser(BaseParser, Logger):
                 error_message=str(e),
                 processing_time=0.0,
             )
+
+    async def _index_embeddings(self, chunks: List[Chunk]) -> None:
+        """Index the document embeddings into the vector store."""
+
+        try:
+            start_time = time.time()
+
+            for chunk in chunks:
+                self.vector_store.add(chunk.embedding_vector)
+
+        except Exception as e:
+            raise ValueError("Unable to index the document into the vector store.") from e
 
     async def _get_health_status(self) -> Dict[str, Any]:
         """Get the health status of the DOCX parser."""

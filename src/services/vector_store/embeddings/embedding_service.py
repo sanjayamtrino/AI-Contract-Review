@@ -8,13 +8,17 @@ from transformers import AutoModel, AutoTokenizer
 
 from src.config.logging import Logger
 from src.config.settings import get_settings
+from src.services.vector_store.embeddings.base_embedding_service import (
+    BaseEmbeddingService,
+)
 
 
-class HuggingFaceEmbeddingService(Logger):
+class HuggingFaceEmbeddingService(BaseEmbeddingService, Logger):
     """Hugging Face Embedding service."""
 
     def __init__(self) -> None:
         """Initiliaze the Service."""
+        super().__init__()
 
         self.settings = get_settings()
         self.model_name = self.settings.hugggingface_minilm_embedding_model
@@ -28,6 +32,10 @@ class HuggingFaceEmbeddingService(Logger):
             "errors": 0,
             "api_calls": 0,
         }
+
+    def get_embedding_dimentions(self) -> int:
+        """Returns the embedding dimentions."""
+        return self.tokenizer.get_sentence_embedding_dimension()
 
     async def generate_embeddings(self, text: str) -> List[float]:
         """Generate embeddings for the given text."""
