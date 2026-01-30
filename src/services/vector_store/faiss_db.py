@@ -5,13 +5,15 @@ import faiss
 import numpy as np
 
 from src.config.logging import Logger
+from src.services.vector_store.base_store import BaseVectorStore
 
 
-class FAISSVectorStore(Logger):
-    def __init__(self, embedding_dimention: int) -> None:
+class FAISSVectorStore(BaseVectorStore, Logger):
+    """FAISS In-Memory vector store for single vectors."""
+
+    def __init__(self, embedding_dimension: int) -> None:
         super().__init__()
-        self.dimension = embedding_dimention
-
+        self.dimension = embedding_dimension
         self.index = faiss.IndexFlatIP(self.dimension)
 
         self.stats: Dict[str, Any] = {
@@ -21,29 +23,32 @@ class FAISSVectorStore(Logger):
             "total_search_time": 0.0,
         }
 
-    def _validate_vectors(self, vectors: np.ndarray) -> np.ndarray:
-        if vectors.ndim == 1:
-            vectors = vectors.reshape(1, -1)
-        if vectors.shape[1] != self.dimension:
-            raise ValueError(f"Expected dimension {self.dimension}, got {vectors.shape[1]}")
-        faiss.normalize_L2(vectors)
-        return vectors
+    def _validate_vectors(self, vector: np.ndarray) -> np.ndarray:
+        """Ensure the vector has the correct shape and normalize for cosine similarity."""
+        if vector.ndim == 1:
+            vector = vector.reshape(1, -1)
+        if vector.shape[1] != self.dimension:
+            raise ValueError(f"Expected dimension {self.dimension}, got {vector.shape[1]}")
+        faiss.normalize_L2(vector)
+        return vector
 
-    def add(self, embeddings: List[List[float]]) -> None:
-        if not embeddings:
+    async def index_embedding(self, embedding: List[float]) -> None:
+        """Add a single embedding vector to the FAISS index."""
+        if not embedding:
             raise ValueError("Embeddings list cannot be empty.")
 
-        vectors = np.array(embeddings, dtype=np.float32)
+        vector = np.array(embedding, dtype=np.float32)
 
         try:
             start_time = time.time()
-            vectors = self._validate_vectors(vectors)
-            self.index.add(vectors)
+            vector = self._validate_vectors(vector)
+            self.index.add(vector)
             elapsed_time = time.time() - start_time
 
-            self.stats["vectors_added"] += vectors.shape[0]
+            # Update stats
+            self.stats["vectors_added"] += vector.shape[0]
             self.stats["total_add_time"] += elapsed_time
 
-            self.logger.info(f"Added {vectors.shape[0]} vector(s) in {elapsed_time:.2f}s")
+            self.logger.info(f"Added {vector.shape[0]} vector in {elapsed_time:.4f}s")
         except Exception as e:
             raise ValueError("Unable to index embeddings into database.") from e

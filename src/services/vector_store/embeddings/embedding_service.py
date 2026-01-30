@@ -33,7 +33,7 @@ class HuggingFaceEmbeddingService(BaseEmbeddingService, Logger):
             "api_calls": 0,
         }
 
-    def get_embedding_dimentions(self) -> int:
+    def get_embedding_dimensions(self) -> int:
         """Returns the embedding dimentions."""
         return self.tokenizer.get_sentence_embedding_dimension()
 

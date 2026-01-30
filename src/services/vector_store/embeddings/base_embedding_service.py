@@ -6,8 +6,8 @@ class BaseEmbeddingService(ABC):
     """Base Class for Embedding Serivces."""
 
     @abstractmethod
-    def get_embedding_dimentions(self) -> int:
-        """Returns the embedding dimention of the model used."""
+    def get_embedding_dimensions(self) -> int:
+        """Returns the embedding dimension of the model used."""
         pass
 
     @abstractmethod

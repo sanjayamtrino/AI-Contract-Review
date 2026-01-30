@@ -41,7 +41,7 @@ class DocxParser(BaseParser, Logger):
         # self.embedding_service = BGEEmbeddingService()
         # self.embedding_service = GeminiEmbeddingService()
         # self.embedding_service = OpenAIEmbeddings()
-        self.vector_store = FAISSVectorStore(embedding_dimention=self.embedding_service.get_embedding_dimentions())
+        self.vector_store = FAISSVectorStore(embedding_dimension=self.embedding_service.get_embedding_dimensions())
 
     async def clean_document(self, document: Document) -> None:
         """Clean the document before parsing to remove unwanted elements."""
@@ -196,7 +196,7 @@ class DocxParser(BaseParser, Logger):
 
                 # Embedd the text
                 vector_data: List[float] = await self.embedding_service.generate_embeddings(text=text)
-                self.vector_store.add(embeddings=vector_data)
+                await self.vector_store.index_embedding(embedding=vector_data)
 
                 chunk = Chunk(
                     chunk_id=None,
