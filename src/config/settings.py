@@ -22,14 +22,14 @@ class Settings(BaseSettings):
     gemini_api_key: Union[str, None] = Field(default=None, description="API key for Gemini LLM Model.")
     gemini_embedding_model: str = Field(default="gemini-embedding-001", description="Gemini Embedding model used.")
     openai_api_key: Union[str, None] = Field(default=None, description="API Key  for the OPENAI Models.")
-    openai_embedding_model: str = Field(default="text-embedding-3-small", description="OPENAI Embedding model used.")
+    openai_embedding_model: str = Field(default="text-embedding-3-large", description="OPENAI Embedding model used.")
 
     # Hugging Face Settings
     hugggingface_minilm_embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2", description="Hugging Face Embedding Model.")  # 384
     hugggingface_qwen_embedding_model: str = Field(default="Qwen/Qwen3-Embedding-0.6B", description="Qwen3 0.6B model from Hugging Face.")
 
     # Vector Database settings
-    db_dimention: int = Field(default=384, description="Dimention of the vector to store.")
+    # db_dimention: int = Field(default=1536, description="Dimention of the vector to store.")
 
     # Storage paths
     logs_directory: str = Field(default="./logs", description="Directory for application logs")

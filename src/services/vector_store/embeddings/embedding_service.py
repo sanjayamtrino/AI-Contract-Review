@@ -102,8 +102,8 @@ class HuggingFaceEmbeddingService(BaseEmbeddingService, Logger):
             )
 
 
-service = HuggingFaceEmbeddingService()
-print(service.get_embedding_dimensions())
+# service = HuggingFaceEmbeddingService()
+# print(service.get_embedding_dimensions())
 
 
 # Too expensive and consuming a lot of resources.
@@ -165,6 +165,10 @@ class BGEEmbeddingService(Logger):
             # Normalize for cosine similarity
             embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
         return embedding[0]
+
+    def get_embedding_dimensions(self) -> int:
+        """Returns the embedding dimentions."""
+        return self.model.config.hidden_size
 
     def get_stats(self) -> Dict[str, Any]:
         return self.stats.copy()

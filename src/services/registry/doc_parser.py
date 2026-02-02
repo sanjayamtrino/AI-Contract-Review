@@ -1,3 +1,4 @@
+import re
 import time
 from datetime import datetime
 from io import BytesIO
@@ -18,15 +19,15 @@ from src.exceptions.parser_exceptions import (
 from src.schemas.registry import Chunk, ParseResult
 from src.services.registry.base_parser import BaseParser
 from src.services.vector_store.embeddings.embedding_service import (
-    # BGEEmbeddingService,
+    BGEEmbeddingService,
     HuggingFaceEmbeddingService,
 )
-from src.services.vector_store.manager import get_faiss_vector_store
 
 # from src.services.vector_store.embeddings.gemini_embeddings import (
 #     GeminiEmbeddingService,
 # )
-# from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
+from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
+from src.services.vector_store.manager import get_faiss_vector_store, index_chunks
 
 
 class DocxParser(BaseParser, Logger):
@@ -37,11 +38,38 @@ class DocxParser(BaseParser, Logger):
 
         super().__init__()
         self.settings = get_settings()
-        self.embedding_service = HuggingFaceEmbeddingService()
-        # self.embedding_service = BGEEmbeddingService()
+        # self.embedding_service = HuggingFaceEmbeddingService()
+        self.embedding_service = BGEEmbeddingService()
         # self.embedding_service = GeminiEmbeddingService()
         # self.embedding_service = OpenAIEmbeddings()
         self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
+
+    def _clean_text(self, text: str) -> str:
+        """Cleans and normalize the text content."""
+
+        if not text:
+            return ""
+
+        # Remove excessive whitespace and newlines (collapse all whitespace to single space)
+        text = re.sub(r"\s+", " ", text)
+
+        # Remove leading/trailing whitespace
+        text = text.strip()
+
+        # Remove multiple spaces (if any remain)
+        text = re.sub(r" {2,}", " ", text)
+
+        # Normalize common special characters
+        text = text.replace("\u00a0", " ")  # Non-breaking space
+        text = text.replace("\u200b", "")  # Zero-width space
+        text = text.replace("\ufeff", "")  # Zero-width no-break space
+        text = text.replace("\r", "")  # Carriage return
+
+        # Remove any remaining control characters except normal space
+        text = re.sub(r"[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]", "", text)
+        text = text.lstrip(" .\n\t")
+
+        return text
 
     async def clean_document(self, document: Document) -> None:
         """Clean the document before parsing to remove unwanted elements."""
@@ -62,6 +90,19 @@ class DocxParser(BaseParser, Logger):
         try:
             properties = document.core_properties
 
+            # Count words from paragraphs
+            paragraph_word_count = sum(len(p.text.split()) for p in document.paragraphs)
+
+            # Count words from tables
+            table_word_count = 0
+            for table in document.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        table_word_count += len(cell.text.split())
+
+            # Total word count including both paragraphs and tables
+            total_word_count = paragraph_word_count + table_word_count
+
             metadata: Dict[str, Any] = {
                 "source": "docx",
                 "author": properties.author or "Unknown",
@@ -74,7 +115,9 @@ class DocxParser(BaseParser, Logger):
                 "paragraph_count": len(document.paragraphs),
                 "table_count": len(document.tables),
                 "image_count": len(document.inline_shapes),
-                "word_count": sum(len(p.text.split()) for p in document.paragraphs),
+                "word_count": total_word_count,
+                "paragraph_word_count": paragraph_word_count,
+                "table_word_count": table_word_count,
             }
 
             return metadata
@@ -90,13 +133,15 @@ class DocxParser(BaseParser, Logger):
         try:
             for index, paragraph in enumerate(document.paragraphs):
                 if paragraph.text.strip():
-                    paragraphs_data.append(
-                        {
-                            "index": index,
-                            "content": paragraph.text.strip(),
-                            "is_heading": paragraph.style.name.startswith("Heading") if paragraph.style else False,
-                        }
-                    )
+                    cleaned_text = self._clean_text(paragraph.text)
+                    if cleaned_text:
+                        paragraphs_data.append(
+                            {
+                                "index": index,
+                                "content": cleaned_text,
+                                "is_heading": paragraph.style.name.startswith("Heading") if paragraph.style else False,
+                            }
+                        )
 
         except Exception as e:
             self.logger.error(f"Error extracting paragraphs: {e}")
@@ -118,7 +163,7 @@ class DocxParser(BaseParser, Logger):
             for table_index, table in enumerate(document.tables):
                 table_content = []
                 for row in table.rows:
-                    row_data = [cell.text.strip() for cell in row.cells]
+                    row_data = [self._clean_text(cell.text) for cell in row.cells]
                     table_content.append(row_data)
 
                 tables_data.append(
@@ -176,39 +221,90 @@ class DocxParser(BaseParser, Logger):
             paragraphs = await self._extract_paragraphs(document=document)
 
             # Extract tables
-            # tables = await self._extract_tables(document=document)
+            tables = await self._extract_tables(document=document)
 
-            full_text = "\n\n".join([p["content"] for p in paragraphs])
-
-            # full_tables_text = "\n\n".join(["\n".join(["\t".join(row) for row in table["content"]]) for table in tables])
-            # print(full_tables_text)
-
-            # We need to perform the chunking here and create list of chunks
-            # ------------------------------------
+            full_text = " ".join([p["content"] for p in paragraphs])
+            full_text = self._clean_text(full_text)
 
             text_splitter = await self._get_text_splitter()
-
-            texts: List[str] = text_splitter.split_text(full_text)
             chunks: List[Chunk] = []
+            chunk_index = 0
 
-            for index, text in enumerate(texts):
-                self.logger.debug(f"Chunk created with length {len(text)}.")
+            # Create chunks from paragraph text
+            if full_text:
+                texts: List[str] = text_splitter.split_text(full_text)
 
-                # Embedd the text
-                vector_data: List[float] = await self.embedding_service.generate_embeddings(text=text)
+                for text in texts:
+                    cleaned_chunk = self._clean_text(text)
+
+                    if not cleaned_chunk:
+                        continue
+
+                    self.logger.debug(f"Paragraph chunk {chunk_index} created with length {len(cleaned_chunk)}.")
+
+                    # Embed the text
+                    vector_data: List[float] = await self.embedding_service.generate_embeddings(text=cleaned_chunk)
+                    await self.vector_store.index_embedding(embedding=vector_data)
+
+                    chunk = Chunk(
+                        chunk_id=None,
+                        document_id=None,
+                        chunk_index=chunk_index,
+                        content=cleaned_chunk,
+                        embedding_model=self.embedding_service.model_name,
+                        embedding_vector=vector_data,
+                        metadata={
+                            "chunk_type": "paragraph",
+                        },
+                        created_at=datetime.utcnow().isoformat(),
+                    )
+                    chunks.append(chunk)
+                    chunk_index += 1
+
+            # Create separate chunks for each table
+            for table_data in tables:
+                # Convert table to text format
+                table_text_rows = []
+                for row in table_data["content"]:
+                    # Joining cells with pipe separator for readability
+                    row_text = " | ".join(row)
+                    table_text_rows.append(row_text)
+
+                # Join all rows
+                table_text = " ".join(table_text_rows)
+
+                # Clean the table text
+                cleaned_table_text = self._clean_text(table_text)
+
+                if not cleaned_table_text:  # Skip empty tables
+                    continue
+
+                self.logger.debug(f"Table chunk {chunk_index} created with length {len(cleaned_table_text)}.")
+
+                # Embed the table text
+                vector_data: List[float] = await self.embedding_service.generate_embeddings(text=cleaned_table_text)
                 await self.vector_store.index_embedding(embedding=vector_data)
 
                 chunk = Chunk(
                     chunk_id=None,
                     document_id=None,
-                    chunk_index=index,
-                    content=text,
+                    chunk_index=chunk_index,
+                    content=cleaned_table_text,
                     embedding_model=self.embedding_service.model_name,
-                    embedding_vector=vector_data,
-                    metadata={},
+                    embedding_vector=None,  # vector_data,
+                    metadata={
+                        "chunk_type": "table",
+                        "table_index": table_data["table_index"],
+                        "row_count": len(table_data["content"]),
+                        "column_count": len(table_data["content"][0]) if table_data["content"] else 0,
+                    },
                     created_at=datetime.utcnow().isoformat(),
                 )
                 chunks.append(chunk)
+                chunk_index += 1
+
+            # Store chunks in the shared manager so RetrievalService can access them
+            index_chunks(chunks)
 
             processing_time = time.time() - start_time
 

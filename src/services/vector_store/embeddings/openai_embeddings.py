@@ -58,6 +58,14 @@ class OpenAIEmbeddings(Logger):
         except Exception as e:
             raise ValueError("Can't complete the emmbedding process.") from e
 
+    def get_embedding_dimensions(self) -> int:
+        """Returns the embedding dimentions."""
+
+        if self.model_name == "text-embedding-3-small":
+            return 1536
+        else:
+            return 3072
+
     def get_stats(self) -> Dict[str, Any]:
         """Returns the statistics of the embedding service."""
         return self.stats.copy()
