@@ -30,6 +30,7 @@ faiss-cpu = "*"
 openai = "*"
 einops = "*"
 types-requests = "*"
+pystache = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
