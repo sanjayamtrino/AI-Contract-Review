@@ -6,6 +6,7 @@ from src.services.vector_store.embeddings.embedding_service import (
     BGEEmbeddingService,
     HuggingFaceEmbeddingService,
 )
+from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
 from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
 from src.services.vector_store.manager import get_chunks, get_faiss_vector_store
 
@@ -20,6 +21,7 @@ class RetrievalService(Logger):
         # self.embedding_service = HuggingFaceEmbeddingService()
         # self.embedding_service = OpenAIEmbeddings()
         self.embedding_service = BGEEmbeddingService()
+        # self.embedding_service = JinaEmbeddings()
         self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
 
     async def retrieve_data(self, query: str, top_k: int = 5, threshold: Optional[float] = 0.0) -> Dict[str, Any]:
@@ -30,7 +32,7 @@ class RetrievalService(Logger):
 
         try:
             # Generate query embedding
-            query_embedding = await self.embedding_service.generate_embeddings(text=query)
+            query_embedding = await self.embedding_service.generate_embeddings(text=query, task="retrieval.query")
 
             # Search vector store for top-k similar embeddings
             search_result = await self.vector_store.search_index(query_embedding, top_k)

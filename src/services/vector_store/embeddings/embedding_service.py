@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import torch
 from sentence_transformers import SentenceTransformer
@@ -129,7 +129,7 @@ class BGEEmbeddingService(Logger):
             "average_embedding_time": 0.0,
         }
 
-    async def generate_embeddings(self, text: str) -> List[float]:
+    async def generate_embeddings(self, text: str, task: Optional[str] = "") -> List[float]:
         """Generate a normalized embedding for a single text."""
         if not text or not text.strip():
             raise ValueError("Text cannot be empty.")

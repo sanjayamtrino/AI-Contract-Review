@@ -22,6 +22,7 @@ from src.services.vector_store.embeddings.embedding_service import (
     BGEEmbeddingService,
     HuggingFaceEmbeddingService,
 )
+from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
 
 # from src.services.vector_store.embeddings.gemini_embeddings import (
 #     GeminiEmbeddingService,
@@ -42,6 +43,7 @@ class DocxParser(BaseParser, Logger):
         self.embedding_service = BGEEmbeddingService()
         # self.embedding_service = GeminiEmbeddingService()
         # self.embedding_service = OpenAIEmbeddings()
+        # self.embedding_service = JinaEmbeddings()
         self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
 
     def _clean_text(self, text: str) -> str:
@@ -243,7 +245,7 @@ class DocxParser(BaseParser, Logger):
                     self.logger.debug(f"Paragraph chunk {chunk_index} created with length {len(cleaned_chunk)}.")
 
                     # Embed the text
-                    vector_data: List[float] = await self.embedding_service.generate_embeddings(text=cleaned_chunk)
+                    vector_data: List[float] = await self.embedding_service.generate_embeddings(text=cleaned_chunk, task="text-matching")
                     await self.vector_store.index_embedding(embedding=vector_data)
 
                     chunk = Chunk(

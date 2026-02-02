@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # Hugging Face Settings
     hugggingface_minilm_embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2", description="Hugging Face Embedding Model.")  # 384
     hugggingface_qwen_embedding_model: str = Field(default="Qwen/Qwen3-Embedding-0.6B", description="Qwen3 0.6B model from Hugging Face.")
+    huggingface_jina_embedding_model: str = Field(default="jina-embeddings-v3", description="Jina Embedding model from HuggingFace.")
+
+    # Jina Embeddings
+    jina_embedding_model_uri: str = Field(default="https://api.jina.ai/v1/embeddings", description="Jina-Embedding model URI.")
+    jina_embedding_API: Union[str, None] = Field(default=None, description="API Token for Jina Embeddings.")
 
     # Vector Database settings
     # db_dimention: int = Field(default=1536, description="Dimention of the vector to store.")

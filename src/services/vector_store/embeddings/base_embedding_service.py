@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 
 
 class BaseEmbeddingService(ABC):
@@ -11,6 +11,6 @@ class BaseEmbeddingService(ABC):
         pass
 
     @abstractmethod
-    async def generate_embeddings(self, text: str) -> List[float]:
+    async def generate_embeddings(self, text: str, task: Optional[str]) -> List[float]:
         """Generate embeddings for the given text."""
         pass
