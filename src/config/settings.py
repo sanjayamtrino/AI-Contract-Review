@@ -24,6 +24,9 @@ class Settings(BaseSettings):
 
     # Hugging Face Settings
     hugggingface_embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2", description="Hugging Face Embedding Model.")
+    
+    # Vector Store Settings
+    db_dimention: int = Field(default=768, description="Dimension of embedding vectors for FAISS index")
 
     # Storage paths
     logs_directory: str = Field(default="./logs", description="Directory for application logs")

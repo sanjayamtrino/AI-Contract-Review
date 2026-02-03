@@ -41,7 +41,7 @@ async def start_testing_process():
         # Check if we got a valid dictionary back
         if isinstance(result, dict) and "parties" in result:
             print("   ✅ RESPONSE RECEIVED SUCCESSFULLY!")
-        else:
+        else: 
             print("   ❌ RESPONSE FORMAT INVALID.")
             print(result)
             return
