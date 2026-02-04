@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     openai_api_key: Union[str, None] = Field(default=None, description="API Key  for the OPENAI Models.")
     openai_embedding_model: str = Field(default="text-embedding-3-large", description="OPENAI Embedding model used.")
 
+    # Azure OpenAI Model Settings
+    azure_openai_api_key: Union[str, None] = Field(default=None, description="")
+    azure_endpoint_uri: Union[str, None] = Field(default=None, description="")
+    azure_deployment_name: str = Field(default="gpt-4o", description="")
+    azure_api_version: str = Field(default="2024-05-01-preview")
+
     # Hugging Face Settings
     hugggingface_minilm_embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2", description="Hugging Face Embedding Model.")  # 384
     hugggingface_qwen_embedding_model: str = Field(default="Qwen/Qwen3-Embedding-0.6B", description="Qwen3 0.6B model from Hugging Face.")

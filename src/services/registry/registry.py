@@ -1,9 +1,9 @@
 from typing import Dict, Optional
 
 from src.services.registry.base_parser import BaseParser
+from src.services.registry.doc_parser import DocxParser
 
-# from src.services.registry.doc_parser import DocxParser
-from src.services.registry.semantic_parser import DocxParser
+# from src.services.registry.semantic_parser import DocxParser
 
 
 class ParserRegistry:

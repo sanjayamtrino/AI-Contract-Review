@@ -23,8 +23,8 @@ class RetrievalService(Logger):
         self.settings = get_settings()
         # self.embedding_service = HuggingFaceEmbeddingService()
         # self.embedding_service = OpenAIEmbeddings()
-        # self.embedding_service = BGEEmbeddingService()
-        self.embedding_service = JinaEmbeddings()
+        self.embedding_service = BGEEmbeddingService()
+        # self.embedding_service = JinaEmbeddings()
         self.llm = GeminiModel()
         self.rewrite_query_prompt = Path(r"src\services\prompts\v1\query_rewriter.mustache").read_text()
         self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
@@ -36,7 +36,7 @@ class RetrievalService(Logger):
             "query": query,
         }
         response: QueryRewriterResponse = await self.llm.generate(prompt=self.rewrite_query_prompt, context=context, response_model=QueryRewriterResponse)
-        return response.queries
+        return [q.query for q in response.queries]
 
     async def retrieve_data(self, query: str, top_k: int = 5, threshold: Optional[float] = 0.0) -> Dict[str, Any]:
         """Retrieve and return relevant document chunks based on query."""
