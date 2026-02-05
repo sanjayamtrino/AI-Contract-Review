@@ -64,6 +64,7 @@ class FAISSVectorStore(BaseVectorStore, Logger):
 
             start_time = time.time()
             query = self._validate_vectors(query)
+
             scores, indices = self.index.search(query, top_k)
             elapsed_time = time.time() - start_time
 

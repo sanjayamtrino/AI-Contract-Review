@@ -9,6 +9,7 @@ from src.config.settings import get_settings
 from src.schemas.registry import ParseResult
 from src.services.registry.base_parser import BaseParser
 from src.services.registry.registry import ParserRegistry
+from src.services.vector_store.manager import index_chunks
 
 
 class IngestionService(Logger):
@@ -36,6 +37,12 @@ class IngestionService(Logger):
         parsed_data: ParseResult = await parser.parse(document=document)
         parsed_data.processing_time = time.time() - start_time
         self.logger.info(f"Data parsed in {parsed_data.processing_time:.2f} seconds.")
+
+        # Index the chunks in the vector store manager
+        if parsed_data.chunks:
+            index_chunks(parsed_data.chunks)
+            self.logger.info(f"Indexed {len(parsed_data.chunks)} chunks into the vector store.")
+
         return parsed_data
 
     async def _get_health_status(self) -> Dict[str, Any]:
