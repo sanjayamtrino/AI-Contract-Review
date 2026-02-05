@@ -1,9 +1,9 @@
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Type
 
 import pystache
 from openai import AzureOpenAI, OpenAI
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from src.config.logging import Logger
 from src.config.settings import get_settings
@@ -37,7 +37,7 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
 
         return pystache.render(template=prompt, context=context)
 
-    async def generate(self, prompt: str, context: Dict[str, Any], response_model: BaseModel) -> Any:
+    async def generate(self, prompt: str, context: Dict[str, Any], response_model: Type) -> Any:
         """Main function to generate response."""
 
         if self.deployment_name is None:

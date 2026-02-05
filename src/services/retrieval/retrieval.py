@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 from src.config.logging import Logger
 from src.config.settings import get_settings
 from src.schemas.query_rewriter import QueryRewriterResponse
+from src.services.llm.azure_openai_model import AzureOpenAIModel
 from src.services.llm.gemini_model import GeminiModel
 from src.services.vector_store.embeddings.embedding_service import (
     BGEEmbeddingService,
@@ -25,7 +26,8 @@ class RetrievalService(Logger):
         # self.embedding_service = OpenAIEmbeddings()
         self.embedding_service = BGEEmbeddingService()
         # self.embedding_service = JinaEmbeddings()
-        self.llm = GeminiModel()
+        # self.llm = GeminiModel()
+        self.llm = AzureOpenAIModel()
         self.rewrite_query_prompt = Path(r"src\services\prompts\v1\query_rewriter.mustache").read_text()
         self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
 
