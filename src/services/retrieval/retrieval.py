@@ -40,6 +40,10 @@ class RetrievalService(Logger):
         response: QueryRewriterResponse = await self.llm.generate(prompt=self.rewrite_query_prompt, context=context, response_model=QueryRewriterResponse)
         return [q.query for q in response.queries]
 
+    async def retrieve_document(self) -> Dict[str, Any]:
+        """Retrieve the whole document chunks."""
+        return {}
+
     async def retrieve_data(self, query: str, top_k: int = 5, threshold: Optional[float] = 0.0) -> Dict[str, Any]:
         """Retrieve and return relevant document chunks based on query."""
 

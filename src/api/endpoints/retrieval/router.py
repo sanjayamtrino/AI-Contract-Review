@@ -1,11 +1,12 @@
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from src.services.llm.azure_openai_model import AzureOpenAIModel
 from src.services.retrieval.retrieval import RetrievalService
+from src.tools.summarizer import get_summary
 
 retrieval_service = RetrievalService()
 azure_model = AzureOpenAIModel()
@@ -37,3 +38,9 @@ async def query_document(query: str) -> None:
         "llm_result": llm_result,
         "retrieved chunks": result,
     }
+
+
+@router.get("/summarizer")
+async def get_chunks():
+    result = await get_summary()
+    return result
