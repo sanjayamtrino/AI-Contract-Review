@@ -1,0 +1,40 @@
+You are an expert contract analyst.
+
+Extract only the key contractual details from the document text below.
+
+Requirements:
+- Use only information explicitly present in the document
+- Do NOT guess or infer missing values
+- If a field is not found, return null
+- Use clear, plain language
+- Dates must be returned exactly as written in the document
+- Do not add explanations or commentary
+
+Fields to extract:
+- Agreement Type (e.g., NDA, MSA, SOW)
+- Effective Date
+- Expiration Date
+- Contract Duration
+- Contract Value or Fees
+- Payment Terms (e.g., Net 30, Net 45)
+- Confidentiality Term (how long confidentiality survives)
+- Termination Conditions (if specified)
+- Governing Law
+- Jurisdiction (if specified)
+
+Output format (strict JSON):
+{
+  "agreement_type": string | null,
+  "effective_date": string | null,
+  "expiration_date": string | null,
+  "duration": string | null,
+  "contract_value": string | null,
+  "payment_terms": string | null,
+  "confidentiality_term": string | null,
+  "termination_conditions": string | null,
+  "governing_law": string | null,
+  "jurisdiction": string | null
+}
+
+Document text:
+{{text}}

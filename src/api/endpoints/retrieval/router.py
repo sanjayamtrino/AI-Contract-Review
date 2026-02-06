@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from src.services.llm.azure_openai_model import AzureOpenAIModel
 from src.services.retrieval.retrieval import RetrievalService
+from src.tools.key_details import get_key_details
 from src.tools.summarizer import get_summary
 
 retrieval_service = RetrievalService()
@@ -44,3 +45,8 @@ async def query_document(query: str) -> None:
 async def get_chunks():
     result = await get_summary()
     return result
+
+
+@router.get("/key-details")
+async def key_details():
+    return await get_key_details()
