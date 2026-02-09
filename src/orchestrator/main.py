@@ -183,10 +183,10 @@ class OpenAIChat(BaseChatClient):
 # For testing without document metadata:
 orchestrator_prompt = load_prompt("orchestrator_prompt")
 
-
+ 
 agent = OpenAIChat().create_agent(
     name="Orchestrator Agent",
-    instructions="orchestrator_prompt",
+    instructions=orchestrator_prompt,
     tools=[get_summary, get_location, get_key_information],
 )
 

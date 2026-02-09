@@ -50,7 +50,6 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
             response = self.client.responses.parse(
                 model=self.deployment_name,
                 input=[
-                    {"role": "system", "content": "Extract the event information."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.8,
