@@ -1,5 +1,3 @@
-"""Service dependency container for managing service lifecycle and initialization."""
-
 from typing import Optional
 
 from src.config.logging import Logger
@@ -8,6 +6,7 @@ from src.services.ingestion.ingestion import IngestionService
 from src.services.llm.azure_openai_model import AzureOpenAIModel
 from src.services.llm.gemini_model import GeminiModel
 from src.services.retrieval.retrieval import RetrievalService
+from src.services.session_manager import SessionManager
 from src.services.vector_store.embeddings.embedding_service import BGEEmbeddingService
 
 
@@ -31,11 +30,16 @@ class ServiceContainer(Logger):
         self._azure_openai_model: Optional[AzureOpenAIModel] = None
         self._gemini_model: Optional[GeminiModel] = None
         self._bge_embedding_service: Optional[BGEEmbeddingService] = None
+        self._session_manager: Optional[SessionManager] = None
 
     def initialize(self) -> None:
         """Initialize all services at application startup."""
         try:
             self.logger.info("Initializing service container...")
+
+            # Initialize session manager first
+            self._session_manager = SessionManager(embedding_dimension=1536)
+            self.logger.info("SessionManager initialized")
 
             # Initialize embedding service
             self._bge_embedding_service = BGEEmbeddingService()
@@ -62,17 +66,25 @@ class ServiceContainer(Logger):
             self.logger.error(f"Failed to initialize service container: {str(e)}")
             raise
 
-    def shutdown(self) -> None:
-        """Shutdown all services at application shutdown."""
+    async def shutdown(self) -> None:
+        """Shutdown all services at application shutdown (async-safe)."""
         try:
             self.logger.info("Shutting down service container...")
 
-            # Services are cleaned up here if needed
+            # Stop the cleanup worker
+            if self._session_manager:
+                try:
+                    await self._session_manager.stop_cleanup_worker()
+                except Exception as e:
+                    self.logger.error(f"Error stopping cleanup worker: {str(e)}")
+
+            # Services are cleaned up here
             self._ingestion_service = None
             self._retrieval_service = None
             self._azure_openai_model = None
             self._gemini_model = None
             self._bge_embedding_service = None
+            self._session_manager = None
 
             self.logger.info("Service container shutdown complete")
 
@@ -80,6 +92,13 @@ class ServiceContainer(Logger):
             self.logger.error(f"Error during service container shutdown: {str(e)}")
 
     # Service getters
+    @property
+    def session_manager(self) -> SessionManager:
+        """Get the session manager instance."""
+        if self._session_manager is None:
+            raise RuntimeError("SessionManager not initialized. Call initialize() first.")
+        return self._session_manager
+
     @property
     def ingestion_service(self) -> IngestionService:
         """Get the ingestion service instance."""
@@ -128,14 +147,27 @@ def get_service_container() -> ServiceContainer:
     return _service_container
 
 
-def initialize_dependencies() -> ServiceContainer:
+async def initialize_dependencies() -> ServiceContainer:
     """Initialize all dependencies at application startup."""
+
     container = get_service_container()
     container.initialize()
+
+    # Start cleanup worker in the running event loop if session manager exists
+    if container._session_manager:
+        try:
+            # Use SessionManager helper to create background task
+            container._session_manager.start_cleanup_worker_sync()
+            container.logger.info("Session cleanup worker started")
+        except RuntimeError:
+            # No running loop; caller must ensure cleanup worker is started
+            container.logger.warning("Could not start cleanup worker: no running event loop")
+
     return container
 
 
-def shutdown_dependencies() -> None:
+async def shutdown_dependencies() -> None:
     """Shutdown all dependencies at application shutdown."""
+
     container = get_service_container()
-    container.shutdown()
+    await container.shutdown()

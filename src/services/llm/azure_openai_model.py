@@ -2,7 +2,7 @@ import json
 from typing import Any, Dict, Type
 
 import pystache
-from openai import AzureOpenAI, OpenAI
+from openai import OpenAI
 from pydantic import ValidationError
 
 from src.config.logging import Logger

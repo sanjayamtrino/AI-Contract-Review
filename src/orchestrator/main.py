@@ -28,7 +28,7 @@ class OpenAIChat(BaseChatClient):
     @property
     def client(self) -> AzureOpenAIModel:
         """Get the Azure OpenAI model client, initializing if necessary."""
-        return get_service_container().azure_openai_model()
+        return get_service_container().azure_openai_model
 
     async def _inner_get_response(self, *, messages, chat_options, **kwargs):
         """The main function to return the response."""
@@ -194,7 +194,7 @@ agent = OpenAIChat().create_agent(
 
 async def main():
     # Initialize dependencies before running the agent
-    initialize_dependencies()
+    await initialize_dependencies()
 
     response = await agent.run("Summary")
     print(response.messages[0].contents[0].text)

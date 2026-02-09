@@ -1,6 +1,6 @@
 import time
 from io import BytesIO
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 from docx import Document
 
@@ -9,7 +9,10 @@ from src.config.settings import get_settings
 from src.schemas.registry import ParseResult
 from src.services.registry.base_parser import BaseParser
 from src.services.registry.registry import ParserRegistry
-from src.services.vector_store.manager import index_chunks
+from src.services.vector_store.manager import (
+    index_chunks,
+    index_chunks_in_session,
+)
 
 
 class IngestionService(Logger):
@@ -23,7 +26,11 @@ class IngestionService(Logger):
         self.registry = ParserRegistry()
         self.vector_store = None
 
-    async def _parse_data(self, data: BytesIO) -> ParseResult:
+    async def _parse_data(
+        self,
+        data: BytesIO,
+        session_data: Optional[Any] = None,
+    ) -> ParseResult:
         """Parse data using the registry services."""
 
         parser: Union[BaseParser, None] = self.registry.get_parser()
@@ -38,10 +45,16 @@ class IngestionService(Logger):
         parsed_data.processing_time = time.time() - start_time
         self.logger.info(f"Data parsed in {parsed_data.processing_time:.2f} seconds.")
 
-        # Index the chunks in the vector store manager
+        # Index the chunks in the vector store
         if parsed_data.chunks:
-            index_chunks(parsed_data.chunks)
-            self.logger.info(f"Indexed {len(parsed_data.chunks)} chunks into the vector store.")
+            if session_data:
+                # Per-session indexing
+                index_chunks_in_session(session_data, parsed_data.chunks)
+                self.logger.info(f"Indexed {len(parsed_data.chunks)} chunks into " f"session {session_data.session_id}")
+            else:
+                # Global indexing (legacy)
+                index_chunks(parsed_data.chunks)
+                self.logger.info(f"Indexed {len(parsed_data.chunks)} chunks into the vector store.")
 
         return parsed_data
 

@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 
 from src.config.logging import get_logger
 from src.schemas.registry import Chunk
+from src.services.session_manager import SessionData
 from src.services.vector_store.faiss_db import FAISSVectorStore
 
 _lock = Lock()
@@ -16,7 +17,11 @@ def get_faiss_vector_store(embedding_dimension: int) -> FAISSVectorStore:
     """Singleton FAISSVectorStore instance. If an instance already exists,
     the existing instance is returned. If the requested `embedding_dimension`
     differs from the already-created store, the existing instance will be
-    used and a warning logged."""
+    used and a warning logged.
+
+    Note: This function is deprecated for new code. Use SessionManager instead
+    for per-session vector stores.
+    """
 
     global _instance, _instance_dimension
 
@@ -35,12 +40,17 @@ def get_faiss_vector_store(embedding_dimension: int) -> FAISSVectorStore:
         return _instance
 
 
-def index_chunks(chunks: List[Chunk]) -> None:
-    """Index a list of chunks into the shared chunk store."""
+def index_chunks(chunks: List[Chunk], session_id: Optional[str] = None) -> None:
+    """Index a list of chunks into the shared chunk store or session-specific store."""
 
     global _chunk_counter
 
     logger = get_logger("FAISSVectorStoreManager")
+
+    if session_id:
+        # Per-session indexing - handled by SessionManager
+        logger.debug(f"Per-session chunk indexing for session {session_id}")
+        return
 
     with _lock:
         for chunk in chunks:
@@ -50,26 +60,30 @@ def index_chunks(chunks: List[Chunk]) -> None:
         logger.info(f"Indexed {len(chunks)} chunks. Total chunks in store: {len(_chunk_store)}")
 
 
-def get_chunk(chunk_index: int) -> Optional[Chunk]:
-    """Retrieve a chunk by its index from the shared store."""
+def get_chunk(chunk_index: int, session_id: Optional[str] = None) -> Optional[Chunk]:
+    """Retrieve a chunk by its index from the shared store or session-specific store."""
+
     with _lock:
         return _chunk_store.get(chunk_index)
 
 
-def get_chunks(chunk_indices: List[int]) -> List[Chunk]:
+def get_chunks(chunk_indices: List[int], session_id: Optional[str] = None) -> List[Chunk]:
     """Retrieve multiple chunks by their indices."""
+
     with _lock:
         return [_chunk_store[idx] for idx in chunk_indices if idx in _chunk_store]
 
 
-def get_all_chunks() -> Dict[int, Chunk]:
+def get_all_chunks(session_id: Optional[str] = None) -> Dict[int, Chunk]:
     """Retrieve all indexed chunks."""
+
     with _lock:
         return _chunk_store.copy()
 
 
-def reset_chunks() -> None:
+def reset_chunks(session_id: Optional[str] = None) -> None:
     """Clear all indexed chunks and reset counter."""
+
     global _chunk_counter
 
     logger = get_logger("FAISSVectorStoreManager")
@@ -78,3 +92,28 @@ def reset_chunks() -> None:
         _chunk_store.clear()
         _chunk_counter = 0
         logger.info("Chunk store reset.")
+
+
+# Session-aware helper functions
+def index_chunks_in_session(session_data: SessionData, chunks: List[Chunk]) -> None:
+    """Index chunks into a specific session's chunk store."""
+
+    logger = get_logger("FAISSVectorStoreManager")
+
+    for chunk in chunks:
+        session_data.chunk_store[session_data.chunk_counter] = chunk
+        session_data.chunk_counter += 1
+
+    logger.info(f"Indexed {len(chunks)} chunks in session {session_data.session_id}. " f"Total chunks in session: {len(session_data.chunk_store)}")
+
+
+def get_chunk_from_session(session_data: SessionData, chunk_index: int) -> Optional[Chunk]:
+    """Retrieve a chunk from a specific session."""
+
+    return session_data.chunk_store.get(chunk_index)
+
+
+def get_chunks_from_session(session_data: SessionData, chunk_indices: List[int]) -> List[Chunk]:
+    """Retrieve multiple chunks from a specific session."""
+
+    return [session_data.chunk_store[idx] for idx in chunk_indices if idx in session_data.chunk_store]
