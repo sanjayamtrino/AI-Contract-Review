@@ -48,7 +48,7 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
         try:
 
             response = self.client.responses.parse(
-                model=self.deployment_name,
+                model=self.settings.openai_model,
                 input=[
                     {"role": "system", "content": "Extract the event information."},
                     {"role": "user", "content": prompt},

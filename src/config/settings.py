@@ -22,13 +22,16 @@ class Settings(BaseSettings):
     gemini_api_key: Union[str, None] = Field(default=None, description="API key for Gemini LLM Model.")
     gemini_embedding_model: str = Field(default="gemini-embedding-001", description="Gemini Embedding model used.")
     gemini_text_generation_model: str = Field(default="gemini-2.5-flash-lite-preview-09-2025", description="Gemini model for Query Rewriting task.")
+
+    # OpenAI Settings
     openai_api_key: Union[str, None] = Field(default=None, description="API Key  for the OPENAI Models.")
     openai_embedding_model: str = Field(default="text-embedding-3-large", description="OPENAI Embedding model used.")
+    openai_model: str = Field(default="gpt-4o-mini", description="Open AI GPT model.")
 
     # Azure OpenAI Model Settings
     azure_openai_api_key: Union[str, None] = Field(default=None, description="")
     azure_endpoint_uri: Union[str, None] = Field(default=None, description="")
-    azure_deployment_name: str = Field(default="gpt-4o", description="")
+    azure_deployment_name: str = Field(default="gpt-4", description="")
     azure_api_version: str = Field(default="2024-05-01-preview")
 
     # Hugging Face Settings

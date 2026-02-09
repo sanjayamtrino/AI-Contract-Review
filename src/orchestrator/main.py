@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from agent_framework import (
     BaseChatClient,
@@ -10,6 +10,7 @@ from agent_framework import (
 )
 from agent_framework._tools import FUNCTION_INVOKING_CHAT_CLIENT_MARKER
 
+from src.dependencies import get_service_container, initialize_dependencies
 from src.services.llm.azure_openai_model import AzureOpenAIModel
 from src.tools.summarizer import get_key_information, get_location, get_summary
 
@@ -17,12 +18,17 @@ from src.tools.summarizer import get_key_information, get_location, get_summary
 class OpenAIChat(BaseChatClient):
     """Custom OpenAI Chat Client."""
 
-    client = AzureOpenAIModel()
+    _azure_model: Optional[Any] = None
     ToolMode.AUTO
 
     def __init__(self):
         super().__init__()
         setattr(self, FUNCTION_INVOKING_CHAT_CLIENT_MARKER, True)
+
+    @property
+    def client(self) -> AzureOpenAIModel:
+        """Get the Azure OpenAI model client, initializing if necessary."""
+        return get_service_container().azure_openai_model()
 
     async def _inner_get_response(self, *, messages, chat_options, **kwargs):
         """The main function to return the response."""
@@ -187,6 +193,9 @@ agent = OpenAIChat().create_agent(
 
 
 async def main():
+    # Initialize dependencies before running the agent
+    initialize_dependencies()
+
     response = await agent.run("Summary")
     print(response.messages[0].contents[0].text)
     # print(response.text)

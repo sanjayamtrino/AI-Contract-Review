@@ -2,10 +2,8 @@ from io import BytesIO
 
 from fastapi import APIRouter, UploadFile
 
+from src.dependencies import get_service_container
 from src.schemas.registry import ParseResult
-from src.services.ingestion.ingestion import IngestionService
-
-ingestion_service = IngestionService()
 
 router = APIRouter()
 
@@ -17,4 +15,6 @@ async def ingest_data(file: UploadFile) -> ParseResult:
     contents = await file.read()
     file_like = BytesIO(contents)
 
-    return await ingestion_service._parse_data(data=file_like)
+    # Get service from the dependency container
+    service_container = get_service_container()
+    return await service_container.ingestion_service._parse_data(data=file_like)

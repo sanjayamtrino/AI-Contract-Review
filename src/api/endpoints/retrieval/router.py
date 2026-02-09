@@ -4,12 +4,8 @@ from typing import Any, Dict
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from src.services.llm.azure_openai_model import AzureOpenAIModel
-from src.services.retrieval.retrieval import RetrievalService
+from src.dependencies import get_service_container
 from src.tools.summarizer import get_summary
-
-retrieval_service = RetrievalService()
-azure_model = AzureOpenAIModel()
 
 router = APIRouter()
 
@@ -25,6 +21,11 @@ prompt_template = Path(r"src\services\prompts\v1\llm_response.mustache").read_te
 
 @router.post("/query/")
 async def query_document(query: str) -> None:
+    # Get services from the dependency container
+    service_container = get_service_container()
+    retrieval_service = service_container.retrieval_service
+    azure_model = service_container.azure_openai_model
+
     result = await retrieval_service.retrieve_data(query=query)
 
     data: Dict[str, Any] = {
