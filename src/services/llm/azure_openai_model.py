@@ -18,9 +18,9 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
 
         super().__init__()
         self.settings = get_settings()
-        self.azure_endpoint = self.settings.azure_endpoint_uri
+        self.azure_endpoint = self.settings.base_url
         self.azure_api_key = self.settings.azure_openai_api_key
-        self.deployment_name = self.settings.azure_deployment_name
+        self.deployment_name = self.settings.azure_openai_responses_deployment_name
 
         if self.settings.openai_api_key is not None:
             self.client = OpenAI(
