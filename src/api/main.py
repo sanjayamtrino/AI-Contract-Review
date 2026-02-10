@@ -1,7 +1,8 @@
+import time
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from src.api.endpoints.admin.router import router as admin_router
 from src.api.endpoints.ingestion.router import router as ingestion_router
@@ -29,6 +30,16 @@ app = FastAPI(
     debug=settings.debug,
     lifespan=lifespan,
 )
+
+
+# Add request timing middleware
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
 
 
 app.include_router(ingestion_router, prefix="/api/v1")

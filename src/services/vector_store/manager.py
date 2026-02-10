@@ -95,14 +95,44 @@ def reset_chunks(session_id: Optional[str] = None) -> None:
 
 
 # Session-aware helper functions
-def index_chunks_in_session(session_data: SessionData, chunks: List[Chunk]) -> None:
-    """Index chunks into a specific session's chunk store."""
+def index_chunks_in_session(session_data: SessionData, chunks: List[Chunk], document_metadata: Optional[Dict] = None) -> None:
+    """Index chunks into a specific session's chunk store and register document metadata.
+
+    If chunks contain a `document_id` this function will create/update a document
+    entry in `session_data.documents` containing metadata and the chunk indices
+    that belong to that document.
+    """
 
     logger = get_logger("FAISSVectorStoreManager")
 
+    # determine document id
+    document_id: Optional[str] = None
+    if chunks:
+        # prefer explicit document_id on chunks
+        first = chunks[0]
+        document_id = getattr(first, "document_id", None)
+
+    if not document_id and document_metadata:
+        document_id = document_metadata.get("document_id")
+
+    # prepare document record
+    if document_id:
+        doc_record = session_data.documents.get(document_id, {"metadata": {}, "chunk_indices": []})
+        # merge metadata if provided
+        if document_metadata:
+            doc_record["metadata"].update(document_metadata)
+    else:
+        doc_record = {"metadata": document_metadata or {}, "chunk_indices": []}
+
+    # index chunks into the session chunk store and record their indices
     for chunk in chunks:
         session_data.chunk_store[session_data.chunk_counter] = chunk
+        doc_record["chunk_indices"].append(session_data.chunk_counter)
         session_data.chunk_counter += 1
+
+    # save document record if we have a document id
+    if document_id:
+        session_data.documents[document_id] = doc_record
 
     logger.info(f"Indexed {len(chunks)} chunks in session {session_data.session_id}. " f"Total chunks in session: {len(session_data.chunk_store)}")
 

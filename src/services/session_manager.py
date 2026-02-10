@@ -23,6 +23,8 @@ class SessionData:
     chunk_store: Dict[int, Chunk] = field(default_factory=dict)
     chunk_counter: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # documents keyed by document_id containing metadata and chunk indices
+    documents: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def refresh_access(self) -> None:
         """Update the last access timestamp."""
@@ -44,7 +46,7 @@ class SessionManager(Logger):
 
     """
 
-    def __init__(self, embedding_dimension: int = 1024) -> None:
+    def __init__(self, embedding_dimension: int = 1536) -> None:
         """Initialize the session manager."""
 
         super().__init__()
@@ -124,6 +126,14 @@ class SessionManager(Logger):
                 "last_access": session.last_access,
                 "idle_seconds": time_since_access,
                 "chunks_indexed": len(session.chunk_store),
+                "documents": [
+                    {
+                        "document_id": doc_id,
+                        "chunk_count": len(doc.get("chunk_indices", [])),
+                        "metadata": doc.get("metadata", {}),
+                    }
+                    for doc_id, doc in session.documents.items()
+                ],
                 "vectors_added": session.vector_store.stats["vectors_added"],
                 "is_expired": session.is_expired(self.ttl_seconds),
             }
@@ -141,6 +151,32 @@ class SessionManager(Logger):
                 }
                 for sid, session in self._sessions.items()
             ]
+
+    def get_document_info(self, session_id: str, document_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve information about a specific document stored in a session.
+
+        Returns metadata, chunk indices, and the actual chunks for convenience.
+        """
+
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if not session:
+                return None
+
+            doc = session.documents.get(document_id)
+            if not doc:
+                return None
+
+            chunk_indices = doc.get("chunk_indices", [])
+            chunks = [session.chunk_store[idx] for idx in chunk_indices if idx in session.chunk_store]
+
+            return {
+                "document_id": document_id,
+                "metadata": doc.get("metadata", {}),
+                "chunk_count": len(chunk_indices),
+                "chunk_indices": chunk_indices,
+                "chunks": chunks,
+            }
 
     async def cleanup_expired_sessions(self) -> int:
         """Check for and delete expired sessions."""

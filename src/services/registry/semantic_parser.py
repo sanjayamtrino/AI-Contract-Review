@@ -1,7 +1,8 @@
 import re
 import time
+import uuid
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from docx.document import Document
@@ -18,6 +19,7 @@ from src.exceptions.parser_exceptions import (
 )
 from src.schemas.registry import Chunk, ParseResult
 from src.services.registry.base_parser import BaseParser
+from src.services.session_manager import SessionData
 from src.services.vector_store.embeddings.embedding_service import BGEEmbeddingService
 from src.services.vector_store.manager import get_faiss_vector_store, index_chunks
 
@@ -239,14 +241,21 @@ class DocxParser(BaseParser, Logger):
 
         return chunks
 
-    async def parse(self, document: Document) -> ParseResult:
+    async def parse(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
         start = time.time()
 
         try:
             await self.clean_document(document)
             metadata = await self._extract_metadata(document)
+
+            # assign a unique id for this document
+            document_id = str(uuid.uuid4())
+            metadata["document_id"] = document_id
             paragraphs = await self._extract_paragraphs(document)
             tables = await self._extract_tables(document)
+
+            # Determine which vector store to use
+            vector_store = session_data.vector_store if session_data else self.vector_store
 
             semantic_chunks = await self._semantic_chunk_paragraphs(paragraphs)
 
@@ -260,12 +269,12 @@ class DocxParser(BaseParser, Logger):
                     continue
 
                 vector = await self.embedding_service.generate_embeddings(text=cleaned, task="text-matching")
-                await self.vector_store.index_embedding(vector)
+                await vector_store.index_embedding(vector)
 
                 chunks.append(
                     Chunk(
-                        chunk_id=None,
-                        document_id=None,
+                        chunk_id=str(uuid.uuid4()),
+                        document_id=document_id,
                         chunk_index=chunk_index,
                         content=cleaned,
                         embedding_model=self.embedding_service.model_name,
@@ -284,12 +293,12 @@ class DocxParser(BaseParser, Logger):
                     continue
 
                 vector = await self.embedding_service.generate_embeddings(text=table_text)
-                await self.vector_store.index_embedding(vector)
+                await vector_store.index_embedding(vector)
 
                 chunks.append(
                     Chunk(
-                        chunk_id=None,
-                        document_id=None,
+                        chunk_id=str(uuid.uuid4()),
+                        document_id=document_id,
                         chunk_index=chunk_index,
                         content=table_text,
                         embedding_model=self.embedding_service.model_name,
@@ -304,7 +313,12 @@ class DocxParser(BaseParser, Logger):
                 )
                 chunk_index += 1
 
-            index_chunks(chunks)
+            if session_data:
+                from src.services.vector_store.manager import index_chunks_in_session
+
+                index_chunks_in_session(session_data, chunks, metadata)
+            else:
+                index_chunks(chunks)
 
             return ParseResult(
                 success=True,

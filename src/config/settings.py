@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # Azure OpenAI Model Settings
     azure_openai_api_key: Union[str, None] = Field(default=None, description="")
     base_url: Union[str, None] = Field(default=None, description="")
-    azure_openai_responses_deployment_name: str = Field(default="gpt-40", description="")
+    azure_openai_responses_deployment_name: str = Field(default="gpt-4o", description="")
     azure_api_version: str = Field(default="2024-05-01-preview")
 
     # Hugging Face Settings

@@ -1,7 +1,7 @@
 from typing import Optional
 
 from src.config.logging import Logger
-from src.config.settings import get_settings
+from src.config.settings import Settings
 from src.services.ingestion.ingestion import IngestionService
 from src.services.llm.azure_openai_model import AzureOpenAIModel
 from src.services.llm.gemini_model import GeminiModel
@@ -22,7 +22,6 @@ class ServiceContainer(Logger):
     def __init__(self) -> None:
         """Initialize the service container."""
         super().__init__()
-        self.settings = get_settings()
 
         # Service instances
         self._ingestion_service: Optional[IngestionService] = None
@@ -31,19 +30,21 @@ class ServiceContainer(Logger):
         self._gemini_model: Optional[GeminiModel] = None
         self._bge_embedding_service: Optional[BGEEmbeddingService] = None
         self._session_manager: Optional[SessionManager] = None
+        self._settings: Optional[Settings] = None
 
     def initialize(self) -> None:
         """Initialize all services at application startup."""
         try:
             self.logger.info("Initializing service container...")
 
-            # Initialize session manager first
-            self._session_manager = SessionManager(embedding_dimension=1536)
-            self.logger.info("SessionManager initialized")
-
-            # Initialize embedding service
+            # Initialize embedding service first to get correct dimensions
             self._bge_embedding_service = BGEEmbeddingService()
-            self.logger.info("BGEEmbeddingService initialized")
+            embedding_dimension = self._bge_embedding_service.get_embedding_dimensions()
+            self.logger.info(f"BGEEmbeddingService initialized with dimension {embedding_dimension}")
+
+            # Initialize session manager with correct embedding dimensions
+            self._session_manager = SessionManager(embedding_dimension=embedding_dimension)
+            self.logger.info("SessionManager initialized")
 
             # Initialize LLM models
             self._azure_openai_model = AzureOpenAIModel()
@@ -59,6 +60,10 @@ class ServiceContainer(Logger):
             # Initialize ingestion service
             self._ingestion_service = IngestionService()
             self.logger.info("IngestionService initialized")
+
+            # Initialize settings
+            self._settings = Settings()
+            self.logger.info("Settings Initialized.")
 
             self.logger.info("Service container initialized successfully")
 
@@ -85,6 +90,7 @@ class ServiceContainer(Logger):
             self._gemini_model = None
             self._bge_embedding_service = None
             self._session_manager = None
+            self._settings = None
 
             self.logger.info("Service container shutdown complete")
 
@@ -92,6 +98,13 @@ class ServiceContainer(Logger):
             self.logger.error(f"Error during service container shutdown: {str(e)}")
 
     # Service getters
+    @property
+    def settings(self) -> Settings:
+        """Get the settings instance"""
+        if self._settings is None:
+            raise RuntimeError("Settings is not initialized. Call initialize() first.")
+        return self._settings
+
     @property
     def session_manager(self) -> SessionManager:
         """Get the session manager instance."""

@@ -6,6 +6,7 @@ from docx import Document
 
 from src.config.logging import Logger
 from src.config.settings import get_settings
+from src.exceptions.ingestion_exceptions import ParserNotFound
 from src.schemas.registry import ParseResult
 from src.services.registry.base_parser import BaseParser
 from src.services.registry.registry import ParserRegistry
@@ -36,20 +37,20 @@ class IngestionService(Logger):
         parser: Union[BaseParser, None] = self.registry.get_parser()
 
         if not parser:
-            self.logger.error("No parser found for the given extension.")
-            raise ValueError("No parser found for the given extension.")
+            self.logger.error("No parser found for the given extension. Check the available parsers in the '/parsers' API.")
+            raise ParserNotFound("No parser found for the given extension. Check the available parsers in the '/parsers' API.")
 
         start_time = time.time()
         document = Document(data)
-        parsed_data: ParseResult = await parser.parse(document=document)
+        parsed_data: ParseResult = await parser.parse(document=document, session_data=session_data)
         parsed_data.processing_time = time.time() - start_time
-        self.logger.info(f"Data parsed in {parsed_data.processing_time:.2f} seconds.")
+        self.logger.info(f"Data parsed in {parsed_data.processing_time:.2f} seconds for the document {document}.")
 
         # Index the chunks in the vector store
         if parsed_data.chunks:
             if session_data:
-                # Per-session indexing
-                index_chunks_in_session(session_data, parsed_data.chunks)
+                # Per-session indexing (include document metadata)
+                index_chunks_in_session(session_data, parsed_data.chunks, parsed_data.metadata)
                 self.logger.info(f"Indexed {len(parsed_data.chunks)} chunks into " f"session {session_data.session_id}")
             else:
                 # Global indexing (legacy)

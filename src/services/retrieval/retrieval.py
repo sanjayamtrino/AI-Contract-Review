@@ -59,6 +59,7 @@ class RetrievalService(Logger):
 
         try:
             queries = await self.rewrite_query(query=query)
+            # queries = [query]
 
             all_hits: Dict[int, Dict[str, Any]] = {}
 
