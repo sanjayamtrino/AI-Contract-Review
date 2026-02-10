@@ -4,7 +4,8 @@ from src.config.logging import Logger
 from src.config.settings import Settings
 from src.services.ingestion.ingestion import IngestionService
 from src.services.llm.azure_openai_model import AzureOpenAIModel
-from src.services.llm.gemini_model import GeminiModel
+
+# from src.services.llm.gemini_model import GeminiModel
 from src.services.retrieval.retrieval import RetrievalService
 from src.services.session_manager import SessionManager
 from src.services.vector_store.embeddings.embedding_service import BGEEmbeddingService
@@ -27,7 +28,7 @@ class ServiceContainer(Logger):
         self._ingestion_service: Optional[IngestionService] = None
         self._retrieval_service: Optional[RetrievalService] = None
         self._azure_openai_model: Optional[AzureOpenAIModel] = None
-        self._gemini_model: Optional[GeminiModel] = None
+        # self._gemini_model: Optional[GeminiModel] = None
         self._bge_embedding_service: Optional[BGEEmbeddingService] = None
         self._session_manager: Optional[SessionManager] = None
         self._settings: Optional[Settings] = None
@@ -50,8 +51,8 @@ class ServiceContainer(Logger):
             self._azure_openai_model = AzureOpenAIModel()
             self.logger.info("AzureOpenAIModel initialized")
 
-            self._gemini_model = GeminiModel()
-            self.logger.info("GeminiModel initialized")
+            # self._gemini_model = GeminiModel()
+            # self.logger.info("GeminiModel initialized")
 
             # Initialize retrieval service
             self._retrieval_service = RetrievalService()
@@ -133,12 +134,12 @@ class ServiceContainer(Logger):
             raise RuntimeError("AzureOpenAIModel not initialized. Call initialize() first.")
         return self._azure_openai_model
 
-    @property
-    def gemini_model(self) -> GeminiModel:
-        """Get the Gemini model instance."""
-        if self._gemini_model is None:
-            raise RuntimeError("GeminiModel not initialized. Call initialize() first.")
-        return self._gemini_model
+    # @property
+    # def gemini_model(self) -> GeminiModel:
+    #     """Get the Gemini model instance."""
+    #     if self._gemini_model is None:
+    #         raise RuntimeError("GeminiModel not initialized. Call initialize() first.")
+    #     return self._gemini_model
 
     @property
     def bge_embedding_service(self) -> BGEEmbeddingService:
