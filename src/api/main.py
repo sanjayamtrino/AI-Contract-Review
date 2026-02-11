@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 
 from src.api.endpoints.admin.router import router as admin_router
 from src.api.endpoints.ingestion.router import router as ingestion_router
+from src.api.endpoints.orchestrator.router import router as orchestrator_router
 from src.api.endpoints.retrieval.router import router as retrieval_router
 from src.config.logging import setup_logging
 from src.config.settings import get_settings
@@ -45,6 +46,7 @@ async def add_process_time_header(request: Request, call_next):
 app.include_router(ingestion_router, prefix="/api/v1")
 app.include_router(retrieval_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1/admin")
+app.include_router(orchestrator_router, prefix="/apii/v1/orchesrator")
 
 
 def main_entry() -> None:

@@ -4,24 +4,31 @@ import sys
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from agent_framework.azure import AzureOpenAIResponsesClient
-from azure.identity.aio import AzureCliCredential
+from agent_framework import ChatAgent
+from agent_framework.openai import OpenAIResponsesClient
 
-from src.tools.summarizer import get_key_information, get_location
+from src.config.settings import get_settings
+
+# from src.tools.summarizer import get_key_information, get_location, get_summary
+from src.tools.summarizer import get_key_information, get_summary
+
+settings = get_settings()
 
 
-async def main():
-    async with AzureCliCredential() as credential:
-        agent = AzureOpenAIResponsesClient(
-            credential=credential,
-        ).create_agent(
-            name="AI Contract Review",
-            instructions="You are an AI Assistant",
-            tools=[get_location, get_key_information],
-        )
+async def get_azure_agent() -> ChatAgent:
 
-        print(await agent.run("What is the location?"))
+    agent = ChatAgent(
+        chat_client=OpenAIResponsesClient(
+            model_id=settings.azure_openai_responses_deployment_name,
+            api_key=settings.azure_openai_api_key,
+            base_url=settings.base_url,
+        ),
+        instructions="You are a helpful summary agent.",
+        tools=[get_summary, get_key_information],
+    )
+
+    return agent
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(get_azure_agent())

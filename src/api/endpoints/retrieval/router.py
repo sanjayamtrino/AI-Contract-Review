@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 
 from src.api.session_utils import get_session_id
 from src.dependencies import get_service_container
-from src.tools.summarizer import get_summary
+
+# from src.tools.summarizer import get_summary
 
 router = APIRouter()
 
@@ -49,7 +50,7 @@ async def query_document(
     }
 
     llm_result = await azure_model.generate(prompt=prompt_template, context=data, response_model=Dummy)
-    print(llm_result, result["chunks"])
+    # print(llm_result, result["chunks"])
     return {
         "llm_result": llm_result,
         "retrieved_chunks": result,
@@ -57,18 +58,18 @@ async def query_document(
     }
 
 
-@router.get("/summarizer")
-async def get_chunks(
-    session_id: str = Depends(get_session_id),
-) -> Dict[str, Any]:
-    """Get summary for a specific session."""
+# @router.get("/summarizer")
+# async def get_chunks(
+#     session_id: str = Depends(get_session_id),
+# ) -> Dict[str, Any]:
+#     """Get summary for a specific session."""
 
-    try:
-        result = await get_summary(session_id=session_id)
-    except ValueError as err:
-        return {"error": str(err), "session_id": session_id}
+#     try:
+#         result = await get_summary(session_id=session_id)
+#     except ValueError as err:
+#         return {"error": str(err), "session_id": session_id}
 
-    return {
-        "summary": result,
-        "session_id": session_id,
-    }
+#     return {
+#         "summary": result,
+#         "session_id": session_id,
+#     }

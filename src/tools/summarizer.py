@@ -1,6 +1,5 @@
-import asyncio
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,7 +15,7 @@ class DummyResponse(BaseModel):
     summary: str = Field(..., description="Brief summary of the doc.")
 
 
-async def get_summary(session_id: Optional[str] = None) -> Any:
+async def get_summary(self, session_id: Optional[str] = "123") -> str:
     """Summary tool for the orchestrator agent or API."""
 
     # Prefer session-specific chunks when session_id provided
@@ -39,26 +38,26 @@ async def get_summary(session_id: Optional[str] = None) -> Any:
     prompt_template = Path(r"src\services\prompts\v1\summary_prompt_template.mustache").read_text()
     context = {"text": full_text}
 
-    summary = await llm_service.generate(prompt=prompt_template, context=context, response_model=DummyResponse)
+    summary: DummyResponse = await llm_service.generate(prompt=prompt_template, context=context, response_model=DummyResponse)
 
-    return summary
+    return summary.summary
 
 
-async def get_location() -> str:
+async def get_location(self) -> str:
     """Location tool for retrieveing the current location."""
 
     return "Hyderabad, Telangana"
 
 
-def get_key_information() -> str:
+def get_key_information(self) -> str:
     """Returns key information."""
 
     return "Key Information regarding the docs."
 
 
-async def main() -> Any:
-    await get_summary()
+# async def main() -> Any:
+#     await get_summary()
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# if __name__ == "__main__":
+#     asyncio.run(main())
