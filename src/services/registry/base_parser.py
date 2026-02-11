@@ -1,17 +1,18 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 
 from docx.document import Document
 
 from src.config.logging import Logger
 from src.schemas.registry import ParseResult
+from src.services.session_manager import SessionData
 
 
 class BaseParser(ABC, Logger):
     """Abstract base class for parsers in the registry service."""
 
     @abstractmethod
-    async def parse(self, document: Document) -> ParseResult:
+    async def parse(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
         """Parse the given document."""
         pass
 

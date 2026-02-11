@@ -1,8 +1,9 @@
 import re
 import time
+import uuid
 from datetime import datetime
 from io import BytesIO
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from docx import Document as DocxDocument
 from docx.document import Document
@@ -18,16 +19,17 @@ from src.exceptions.parser_exceptions import (
 )
 from src.schemas.registry import Chunk, ParseResult
 from src.services.registry.base_parser import BaseParser
+from src.services.session_manager import SessionData
 from src.services.vector_store.embeddings.embedding_service import (
     BGEEmbeddingService,
-    HuggingFaceEmbeddingService,
+    # HuggingFaceEmbeddingService,
 )
-from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
 
+# from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
 # from src.services.vector_store.embeddings.gemini_embeddings import (
 #     GeminiEmbeddingService,
 # )
-from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
+# from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
 from src.services.vector_store.manager import get_faiss_vector_store, index_chunks
 
 
@@ -105,8 +107,12 @@ class DocxParser(BaseParser, Logger):
             # Total word count including both paragraphs and tables
             total_word_count = paragraph_word_count + table_word_count
 
+            # assign a unique document id for this parse
+            document_id = str(uuid.uuid4())
+
             metadata: Dict[str, Any] = {
                 "source": "docx",
+                "document_id": document_id,
                 "author": properties.author or "Unknown",
                 "title": properties.title or "Untitled",
                 "subject": properties.subject or "",
@@ -205,7 +211,7 @@ class DocxParser(BaseParser, Logger):
             is_separator_regex=False,
         )
 
-    async def parse(self, document: Document) -> ParseResult:
+    async def parse(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
         """Parse the DOCX data."""
 
         start_time = time.time()
@@ -218,6 +224,10 @@ class DocxParser(BaseParser, Logger):
 
             # Extract metadata
             metadata = await self._extract_metadata(document=document)
+            document_id = metadata.get("document_id")
+
+            # Determine which vector store to use
+            vector_store = session_data.vector_store if session_data else self.vector_store
 
             # Extract paragraphs
             paragraphs = await self._extract_paragraphs(document=document)
@@ -246,11 +256,11 @@ class DocxParser(BaseParser, Logger):
 
                     # Embed the text
                     vector_data: List[float] = await self.embedding_service.generate_embeddings(text=cleaned_chunk, task="text-matching")
-                    await self.vector_store.index_embedding(embedding=vector_data)
+                    await vector_store.index_embedding(embedding=vector_data)
 
                     chunk = Chunk(
-                        chunk_id=None,
-                        document_id=None,
+                        chunk_id=str(uuid.uuid4()),
+                        document_id=document_id,
                         chunk_index=chunk_index,
                         content=cleaned_chunk,
                         embedding_model=self.embedding_service.model_name,
@@ -285,15 +295,15 @@ class DocxParser(BaseParser, Logger):
 
                 # Embed the table text
                 vector_data: List[float] = await self.embedding_service.generate_embeddings(text=cleaned_table_text)
-                await self.vector_store.index_embedding(embedding=vector_data)
+                await vector_store.index_embedding(embedding=vector_data)
 
                 chunk = Chunk(
-                    chunk_id=None,
-                    document_id=None,
+                    chunk_id=str(uuid.uuid4()),
+                    document_id=document_id,
                     chunk_index=chunk_index,
                     content=cleaned_table_text,
                     embedding_model=self.embedding_service.model_name,
-                    embedding_vector=None,  # vector_data,
+                    embedding_vector=vector_data,
                     metadata={
                         "chunk_type": "table",
                         "table_index": table_data["table_index"],
@@ -331,7 +341,7 @@ class DocxParser(BaseParser, Logger):
         """Index the document embeddings into the vector store."""
 
         try:
-            start_time = time.time()
+            # start_time = time.time()
 
             for chunk in chunks:
                 self.vector_store.add(chunk.embedding_vector)

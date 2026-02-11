@@ -22,13 +22,16 @@ class Settings(BaseSettings):
     gemini_api_key: Union[str, None] = Field(default=None, description="API key for Gemini LLM Model.")
     gemini_embedding_model: str = Field(default="gemini-embedding-001", description="Gemini Embedding model used.")
     gemini_text_generation_model: str = Field(default="gemini-2.5-flash-lite-preview-09-2025", description="Gemini model for Query Rewriting task.")
+
+    # OpenAI Settings
     openai_api_key: Union[str, None] = Field(default=None, description="API Key  for the OPENAI Models.")
     openai_embedding_model: str = Field(default="text-embedding-3-large", description="OPENAI Embedding model used.")
+    openai_model: str = Field(default="gpt-4o-mini", description="Open AI GPT model.")
 
     # Azure OpenAI Model Settings
     azure_openai_api_key: Union[str, None] = Field(default=None, description="")
-    azure_endpoint_uri: Union[str, None] = Field(default=None, description="")
-    azure_deployment_name: str = Field(default="gpt-4o", description="")
+    base_url: Union[str, None] = Field(default=None, description="")
+    azure_openai_responses_deployment_name: str = Field(default="gpt-4o", description="")
     azure_api_version: str = Field(default="2024-05-01-preview")
 
     # Hugging Face Settings
@@ -45,6 +48,10 @@ class Settings(BaseSettings):
 
     # Storage paths
     logs_directory: str = Field(default="./logs", description="Directory for application logs")
+
+    # Session Management settings
+    session_ttl_minutes: int = Field(default=2, description="Session TTL in minutes (default: 2 hours)")
+    session_cleanup_interval_minutes: float = Field(default=1.0, description="How often to check for expired sessions (default: 10 minutes)")
 
     class Config:
         env_file = ".env"
