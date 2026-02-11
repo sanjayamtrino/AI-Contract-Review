@@ -223,11 +223,11 @@ async def get_key_details(session_id: Optional[str] = None) -> Any:
 
     full_text = "\n\n".join(chunk.content for chunk in results.values() if getattr(chunk, "content", None))
 
-    prompt_path = Path("src/services/prompts/v1/key_details_prompt_template.mustache")
+    prompt_path = Path("src/services/prompts/v1/key_details_prompt_template_v2.mustache")
     prompt = prompt_path.read_text(encoding="utf-8")
 
     return await _llm.generate(
         prompt=prompt,
-        context={"text": full_text},
+        context={"context": full_text},
         response_model=KeyDetailsResponse,
     )
