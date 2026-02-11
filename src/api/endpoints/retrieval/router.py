@@ -50,27 +50,10 @@ async def query_document(
     }
 
     llm_result = await azure_model.generate(prompt=prompt_template, context=data, response_model=Dummy)
-    print(llm_result, result["chunks"])
+    # print(llm_result, result["chunks"])
     return {
         "llm_result": llm_result,
         "retrieved_chunks": result,
-        "session_id": session_id,
-    }
-
-
-@router.get("/summarizer")
-async def get_chunks(
-    session_id: str = Depends(get_session_id),
-) -> Dict[str, Any]:
-    """Get summary for a specific session."""
-
-    try:
-        result = await get_summary(session_id=session_id)
-    except ValueError as err:
-        return {"error": str(err), "session_id": session_id}
-
-    return {
-        "summary": result,
         "session_id": session_id,
     }
 

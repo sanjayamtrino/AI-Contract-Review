@@ -47,6 +47,7 @@ app.include_router(ingestion_router, prefix="/api/v1")
 app.include_router(retrieval_router, prefix="/api/v1")
 app.include_router(orchestrator_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1/admin")
+app.include_router(orchestrator_router, prefix="/apii/v1/orchesrator")
 
 
 def main_entry() -> None:
