@@ -5,14 +5,21 @@ from src.config.logging import Logger
 from src.config.settings import get_settings
 from src.schemas.query_rewriter import QueryRewriterResponse
 from src.services.llm.azure_openai_model import AzureOpenAIModel
-from src.services.llm.gemini_model import GeminiModel
+
+# from src.services.llm.gemini_model import GeminiModel
+from src.services.session_manager import SessionData
 from src.services.vector_store.embeddings.embedding_service import (
     BGEEmbeddingService,
-    HuggingFaceEmbeddingService,
+    # HuggingFaceEmbeddingService,
 )
-from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
-from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
-from src.services.vector_store.manager import get_chunks, get_faiss_vector_store
+
+# from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
+# from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
+from src.services.vector_store.manager import (
+    get_chunks,
+    get_chunks_from_session,
+    get_faiss_vector_store,
+)
 
 
 class RetrievalService(Logger):
@@ -44,7 +51,7 @@ class RetrievalService(Logger):
         """Retrieve the whole document chunks."""
         return {}
 
-    async def retrieve_data(self, query: str, top_k: int = 5, threshold: Optional[float] = 0.0) -> Dict[str, Any]:
+    async def retrieve_data(self, query: str, top_k: int = 5, threshold: Optional[float] = 0.0, session_data: Optional[SessionData] = None) -> Dict[str, Any]:
         """Retrieve and return relevant document chunks based on query."""
 
         if not query or not query.strip():
@@ -52,6 +59,7 @@ class RetrievalService(Logger):
 
         try:
             queries = await self.rewrite_query(query=query)
+            # queries = [query]
 
             all_hits: Dict[int, Dict[str, Any]] = {}
 
@@ -62,7 +70,14 @@ class RetrievalService(Logger):
                 query_embedding = await self.embedding_service.generate_embeddings(text=new_query, task="retrieval.query")
 
                 # Search vector store for top-k similar embeddings
-                search_result = await self.vector_store.search_index(query_embedding, top_k)
+                if session_data:
+                    # Per-session search
+                    search_result = await session_data.vector_store.search_index(query_embedding, top_k)
+                    chunk_getter = lambda idx: get_chunks_from_session(session_data, [idx])  # noqa: E731
+                else:
+                    # Global search (legacy)
+                    search_result = await self.vector_store.search_index(query_embedding, top_k)
+                    chunk_getter = lambda idx: get_chunks([idx])  # noqa: E731
 
                 indices = search_result.get("indices", [])
                 scores = search_result.get("scores", [])
@@ -75,7 +90,7 @@ class RetrievalService(Logger):
                         continue
 
                     if idx not in all_hits or score > all_hits[idx]["similarity_score"]:
-                        chunk = get_chunks([idx])
+                        chunk = chunk_getter(idx)
                         if not chunk:
                             continue
                         all_hits[idx] = {

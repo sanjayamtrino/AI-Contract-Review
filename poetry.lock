@@ -16,6 +16,24 @@ files = [
 agent-framework-core = {version = "*", extras = ["all"]}
 
 [[package]]
+name = "agent-framework-azure-ai"
+version = "1.0.0b260130"
+description = "Azure AI Foundry integration for Microsoft Agent Framework."
+optional = false
+python-versions = ">=3.10"
+groups = ["dev"]
+files = [
+    {file = "agent_framework_azure_ai-1.0.0b260130-py3-none-any.whl", hash = "sha256:87f0248fe6d4f2f4146f0a56a53527af6365d4a377dc2e3d56c37cbb9deae098"},
+    {file = "agent_framework_azure_ai-1.0.0b260130.tar.gz", hash = "sha256:c571275089a801f961370ba824568c8b02143b1a6bb5b1d78b97c6debdf4906f"},
+]
+
+[package.dependencies]
+agent-framework-core = "*"
+aiohttp = "*"
+azure-ai-agents = "1.2.0b5"
+azure-ai-projects = ">=2.0.0b3"
+
+[[package]]
 name = "agent-framework-core"
 version = "1.0.0b251001"
 description = "Microsoft Agent Framework for building AI Agents with Python. This is the core package that has all the core abstractions and implementations."
@@ -315,6 +333,42 @@ files = [
 ]
 
 [[package]]
+name = "azure-ai-agents"
+version = "1.2.0b5"
+description = "Microsoft Corporation Azure AI Agents Client Library for Python"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+files = [
+    {file = "azure_ai_agents-1.2.0b5-py3-none-any.whl", hash = "sha256:257d0d24a6bf13eed4819cfa5c12fb222e5908deafb3cbfd5711d3a511cc4e88"},
+    {file = "azure_ai_agents-1.2.0b5.tar.gz", hash = "sha256:1a16ef3f305898aac552269f01536c34a00473dedee0bca731a21fdb739ff9d5"},
+]
+
+[package.dependencies]
+azure-core = ">=1.30.0"
+isodate = ">=0.6.1"
+typing-extensions = ">=4.6.0"
+
+[[package]]
+name = "azure-ai-projects"
+version = "2.0.0b3"
+description = "Microsoft Corporation Azure AI Projects Client Library for Python"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+files = [
+    {file = "azure_ai_projects-2.0.0b3-py3-none-any.whl", hash = "sha256:3b3048a3ba3904d556ba392b7bd20b6e84c93bb39df6d43a6470cdb0ad08af8c"},
+    {file = "azure_ai_projects-2.0.0b3.tar.gz", hash = "sha256:6d09ad110086e450a47b991ee8a3644f1be97fa3085d5981d543f900d78f4505"},
+]
+
+[package.dependencies]
+azure-core = ">=1.35.0"
+azure-identity = ">=1.15.0"
+azure-storage-blob = ">=12.15.0"
+isodate = ">=0.6.1"
+openai = ">=2.8.0"
+
+[[package]]
 name = "azure-core"
 version = "1.38.0"
 description = "Microsoft Azure Core Library for Python"
@@ -414,6 +468,27 @@ msrest = ">=0.6.10"
 opentelemetry-api = "1.39"
 opentelemetry-sdk = "1.39"
 psutil = ">=5.9,<8"
+
+[[package]]
+name = "azure-storage-blob"
+version = "12.28.0"
+description = "Microsoft Azure Blob Storage Client Library for Python"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+files = [
+    {file = "azure_storage_blob-12.28.0-py3-none-any.whl", hash = "sha256:00fb1db28bf6a7b7ecaa48e3b1d5c83bfadacc5a678b77826081304bd87d6461"},
+    {file = "azure_storage_blob-12.28.0.tar.gz", hash = "sha256:e7d98ea108258d29aa0efbfd591b2e2075fa1722a2fae8699f0b3c9de11eff41"},
+]
+
+[package.dependencies]
+azure-core = ">=1.30.0"
+cryptography = ">=2.1.4"
+isodate = ">=0.6.1"
+typing-extensions = ">=4.6.0"
+
+[package.extras]
+aio = ["azure-core[aio] (>=1.30.0)"]
 
 [[package]]
 name = "black"
@@ -5673,4 +5748,8 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = "3.10"
+<<<<<<< HEAD
 content-hash = "97b5d46880a42daa802b4413343373041c5831b329a1cf022b31e8b2d486de10"
+=======
+content-hash = "9a32210d6b697b075584aa5a2f9c47f15483cf5e38986039a8aee8cc2e77bd38"
+>>>>>>> 118a193c4312265082450fc364d6f85254883bdf

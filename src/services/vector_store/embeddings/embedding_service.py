@@ -155,7 +155,7 @@ class BGEEmbeddingService(Logger):
 
     def _embed_text(self, text: str) -> torch.Tensor:
         """Synchronous embedding generation."""
-        inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=1024)
+        inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=1536)
         inputs = {k: v.to("cpu") for k, v in inputs.items()}
 
         with torch.no_grad():
