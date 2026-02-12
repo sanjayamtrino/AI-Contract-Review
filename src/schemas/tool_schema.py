@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -6,7 +6,49 @@ from pydantic import BaseModel, Field
 class SummaryToolRequest(BaseModel):
     """Request Schema for the Summary Tool."""
 
-    session_id: Optional[str] = Field(..., description="Session Id of the data.")
+    session_id: Optional[str] = Field(..., description="Session Id for the data lookup in the database.")
+
+
+class SummaryToolResponse(BaseModel):
+    """Response Schema for the summary tool."""
+
+    summary: str = Field(..., description="Summary of the given document.")
+
+
+class KeyInforamtionToolRequest(BaseModel):
+    """Request Schema for the Key Information Tool."""
+
+    session_id: str = Field(..., description="Session Id for the data lookup in the database.")
+
+
+class KeyInformationData(BaseModel):
+    """Data Types Schema for the Key Information Data."""
+
+    value: Optional[str] = Field(..., description="Value of the particular key field.")
+    information: Optional[str] = Field(..., description="Detailed description of the key information(value) extracted.")
+
+
+class KeyInfomationPartiesSchema(BaseModel):
+    """Response Schema for the parties involved in the document."""
+
+    name: str = Field(..., description="Full legal name exactly as stated, including any subsidiary/affiliate qualifier.")
+    role: str = Field(..., description="Role label exactly as used in the contract.")
+    address: Optional[str] = Field(None, description="Address from the signature block or notice section. Null if not stated.")
+    email: Optional[str] = Field(None, description="Email from the signature block or notice section. Null if not stated.")
+
+
+class KeyInformationToolResponse(BaseModel):
+    """Response Schema for the Key Information Tool."""
+
+    effective_date: KeyInformationData = Field(..., description="The date that the contract becomes legally effective.")
+    expiration_date: KeyInformationData = Field(..., description="The date the contract expires or terminates.")
+    contract_value: KeyInformationData = Field(..., description="Total monetary value of the contract including currency.")
+    duration: KeyInformationData = Field(..., description="Total contract term resolved to both years and months.")
+    net_term: KeyInformationData = Field(..., description="Payment net term exactly as stated.")
+    contract_type: KeyInformationData = Field(..., description="Official title of the agreement as stated in the document.")
+    governing_law: KeyInformationData = Field(..., description="Jurisdiction and venue/forum clause exactly as stated.")
+    other_information: Optional[str] = Field(..., description="Any other additional information; Free-text observations about ambiguities, blank placeholders, conditional dates etc.")
+    parties_involved: List[KeyInfomationPartiesSchema] = Field(..., description="All named contracting parties.")
 
 
 class ToolResponse(BaseModel):

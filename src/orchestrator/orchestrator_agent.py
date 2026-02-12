@@ -8,9 +8,8 @@ from agent_framework import ChatAgent
 from agent_framework.openai import OpenAIResponsesClient
 
 from src.config.settings import get_settings
-
-# from src.tools.summarizer import get_key_information, get_location, get_summary
-from src.tools.summarizer import get_key_information, get_summary
+from src.tools.key_information import get_key_information
+from src.tools.summarizer import get_summary
 
 settings = get_settings()
 
