@@ -1,21 +1,15 @@
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field
-
 from src.dependencies import get_service_container
+from src.schemas.tool_schema import SummaryToolResponse
 from src.services.llm.azure_openai_model import AzureOpenAIModel
 from src.services.vector_store.manager import get_all_chunks
 
 llm_service = AzureOpenAIModel()
 
 
-class DummyResponse(BaseModel):
-
-    summary: str = Field(..., description="Brief summary of the doc.")
-
-
-async def get_summary(self, session_id: Optional[str] = "123") -> str:
+async def get_summary(session_id: Optional[str], response: str = "JSON") -> str:
     """Summary tool for the orchestrator agent or API."""
 
     # Prefer session-specific chunks when session_id provided
@@ -38,26 +32,9 @@ async def get_summary(self, session_id: Optional[str] = "123") -> str:
     prompt_template = Path(r"src\services\prompts\v1\summary_prompt_template.mustache").read_text()
     context = {"text": full_text}
 
-    summary: DummyResponse = await llm_service.generate(prompt=prompt_template, context=context, response_model=DummyResponse)
+    summary: SummaryToolResponse = await llm_service.generate(prompt=prompt_template, context=context, response_model=SummaryToolResponse)
 
-    return summary.summary
-
-
-async def get_location(self) -> str:
-    """Location tool for retrieveing the current location."""
-
-    return "Hyderabad, Telangana"
-
-
-def get_key_information(self) -> str:
-    """Returns key information."""
-
-    return "Key Information regarding the docs."
-
-
-# async def main() -> Any:
-#     await get_summary()
-
-
-# if __name__ == "__main__":
-#     asyncio.run(main())
+    if response == "JSON":
+        return summary.summary
+    else:
+        return summary

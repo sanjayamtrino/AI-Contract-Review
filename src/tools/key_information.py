@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Optional
 
+from pydantic import BaseModel
+
 from src.dependencies import get_service_container
 from src.schemas.tool_schema import KeyInformationToolResponse
 from src.services.llm.azure_openai_model import AzureOpenAIModel
@@ -9,7 +11,7 @@ from src.services.vector_store.manager import get_all_chunks
 _llm = AzureOpenAIModel()
 
 
-async def get_key_information(session_id: Optional[str] = None) -> str:
+async def get_key_information(session_id: Optional[str] = None, response_format: str = "JSON") -> str | BaseModel:
     """Extract structured key contract details from the currently ingested document."""
 
     # Prefer session-specific chunks if session_id is provided
@@ -36,4 +38,7 @@ async def get_key_information(session_id: Optional[str] = None) -> str:
 
     response: KeyInformationToolResponse = await _llm.generate(prompt=prompt_path, context={"contract_text": full_text}, response_model=KeyInformationToolResponse)
 
-    return response.model_dump_json()
+    if response_format == "JSON":
+        return response.model_dump()
+    else:
+        return response

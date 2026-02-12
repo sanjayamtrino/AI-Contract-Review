@@ -32,9 +32,6 @@ async def get_query_response(query: str, session_id: str = Depends(get_session_i
         response = await agent.run(full_query, thread=None)
         print(response.text)
 
-        print(f"Response type: {type(response)}")
-        print(f"Response: {response}")
-
         return ToolResponse(
             tool_id=None,
             status=True,
@@ -44,9 +41,6 @@ async def get_query_response(query: str, session_id: str = Depends(get_session_i
         )
 
     except Exception as e:
-        import traceback
-
-        print(f"Full traceback:\n{traceback.format_exc()}")
 
         return ToolResponse(
             tool_id=None,
