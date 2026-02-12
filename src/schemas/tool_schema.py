@@ -47,8 +47,8 @@ class KeyInformationToolResponse(BaseModel):
     net_term: KeyInformationData = Field(..., description="Payment net term exactly as stated.")
     contract_type: KeyInformationData = Field(..., description="Official title of the agreement as stated in the document.")
     governing_law: KeyInformationData = Field(..., description="Jurisdiction and venue/forum clause exactly as stated.")
-    other_information: Optional[str] = Field(..., description="Any other additional information; Free-text observations about ambiguities, blank placeholders, conditional dates etc.")
-    parties_involved: List[KeyInfomationPartiesSchema] = Field(..., description="All named contracting parties.")
+    notes: Optional[str] = Field(..., description="Any other additional information; Free-text observations about ambiguities, blank placeholders, conditional dates etc.")
+    parties: List[KeyInfomationPartiesSchema] = Field(..., description="All named contracting parties.")
 
 
 class ToolResponse(BaseModel):
@@ -56,6 +56,6 @@ class ToolResponse(BaseModel):
 
     tool_id: Union[str, None] = Field(None, description="Unique id for the tool.")
     status: bool = Field(..., description="Response status of the tool.")
-    response: Dict[str, Any] = Field(..., description="Response content of the tool.")
+    response: Union[Dict[str, Any], BaseModel] = Field(..., description="Response content of the tool.")
     metadata: Dict[str, Any] = Field(..., description="Tool Response Metadata.")
     response_time: str = Field(..., description="Time taken for the response.")
