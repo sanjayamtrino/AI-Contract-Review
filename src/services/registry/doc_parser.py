@@ -47,7 +47,7 @@ class DocxParser(BaseParser, Logger):
         # self.embedding_service = OpenAIEmbeddings()
         # self.embedding_service = JinaEmbeddings()
         self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
-
+ 
     def _clean_text(self, text: str) -> str:
         """Cleans and normalize the text content."""
 

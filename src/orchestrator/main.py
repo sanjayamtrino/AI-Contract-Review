@@ -1,211 +1,102 @@
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, List
 
-from agent_framework import (
-    BaseChatClient,
-    ChatMessage,
-    ChatResponse,
-    ChatResponseUpdate,
-    ToolMode,
-)
-from agent_framework._tools import FUNCTION_INVOKING_CHAT_CLIENT_MARKER
+from src.agents import doc_information
+from src.dependencies import get_service_container
+from src.services.prompts.v1 import load_prompt
 
-from src.dependencies import get_service_container, initialize_dependencies
-from src.services.llm.azure_openai_model import AzureOpenAIModel
-from src.tools.summarizer import get_key_information, get_location, get_summary
+# Agent registry — maps agent names to their run() functions
+AGENT_REGISTRY: Dict[str, Callable] = {
+    "doc_information_agent": doc_information.run,
+}
+
+# Agent definitions for OpenAI function calling
+# The orchestrator sees agents as "tools" and routes to them
+AGENT_DEFINITIONS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "doc_information_agent",
+            "description": (
+                "Handles all document information requests — summaries, key details, "
+                "parties, dates, contract values, and general document understanding. "
+                "Route here when the user asks anything about the content of their uploaded document."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The user's query, rewritten as a clear instruction.",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
+]
 
 
-class OpenAIChat(BaseChatClient):
-    """Custom OpenAI Chat Client."""
+async def run_orchestrator(query: str, session_id: str) -> Dict[str, Any]:
+    """Route the user query to the correct agent via the orchestrator LLM."""
 
-    _azure_model: Optional[Any] = None
-    ToolMode.AUTO
+    container = get_service_container()
+    client = container.azure_openai_model
 
-    def __init__(self):
-        super().__init__()
-        setattr(self, FUNCTION_INVOKING_CHAT_CLIENT_MARKER, True)
+    orchestrator_prompt = load_prompt("orchestrator_prompt")
 
-    @property
-    def client(self) -> AzureOpenAIModel:
-        """Get the Azure OpenAI model client, initializing if necessary."""
-        return get_service_container().azure_openai_model
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": orchestrator_prompt},
+        {"role": "user", "content": query},
+    ]
 
-    async def _inner_get_response(self, *, messages, chat_options, **kwargs):
-        """The main function to return the response."""
+    # Step 1: Ask the LLM which agent to route to
+    response = client.client.chat.completions.create(
+        model=client.deployment_name,
+        messages=messages,
+        temperature=0.3,
+        tools=AGENT_DEFINITIONS,
+        tool_choice="auto",
+    )
 
-        # Store tools in a Dict
-        tools: Dict[str, Any] = {}
-        if chat_options and chat_options.tools:
-            for tool in chat_options.tools:
-                tools[tool.name] = tool
+    assistant_message = response.choices[0].message
 
-        max_iterations = 2
-        iteration = 0
+    # No agent call — return text (clarification or out-of-scope)
+    if not assistant_message.tool_calls:
+        return {
+            "response": assistant_message.content or "",
+        }
 
-        # Tool execution loop
-        while iteration < max_iterations:
-            iteration += 1
+    # Step 2: Execute the agent(s) and return raw results directly
+    all_results: Dict[str, Any] = {}
 
-            # Store the message history into a list and pass to LLM
-            messages_list = []
-            for msg in messages:
-                for content in msg.contents:
-                    if content.type == "text":
-                        messages_list.append(
-                            {
-                                "role": msg.role.value,
-                                "content": content.text,
-                            }
-                        )
-                    elif content.type == "function_call":
-                        # Need to handle the function calling here
-                        messages_list.append(
-                            {
-                                "role": "assistant",
-                                "content": None,
-                                "tool_calls": [
-                                    {
-                                        "id": content.call_id,
-                                        "type": "function",
-                                        "function": {
-                                            "name": content.name,
-                                            "arguments": content.arguments if isinstance(content.arguments, str) else json.dumps(content.arguments),
-                                        },
-                                    }
-                                ],
-                            }
-                        )
-                    elif content.type == "function_result":
-                        # tool results from function execution
-                        result_content = content.result
+    for tool_call in assistant_message.tool_calls:
+        agent_name = tool_call.function.name
 
-                        messages_list.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": content.call_id,
-                                "content": result_content,
-                            }
-                        )
+        if agent_name in AGENT_REGISTRY:
+            try:
+                args = json.loads(tool_call.function.arguments)
+                agent_query = args.get("query", query)
 
-            # Convert tools to OpenAI format
-            tools_list = []
-            if chat_options and chat_options.tools:
-                for tool in chat_options.tools:
-                    tools_list.append(
-                        {
-                            "type": "function",
-                            "function": {
-                                "name": tool.name,
-                                "description": tool.description or "",
-                            },
-                        }
-                    )
-
-            # Call the llm model with tools
-            response = self.client.client.chat.completions.create(
-                model=self.client.deployment_name,
-                messages=messages_list,
-                temperature=0.7,
-                tools=tools_list if tools_list else None,
-                tool_choice="auto" if tools_list else None,
-            )
-
-            # Check if the model wants to call a tool
-            assistant_message = response.choices[0].message
-
-            # Check if the model wants to call any tools
-            if assistant_message.tool_calls:
-                messages.append(
-                    ChatMessage(
-                        role="assistant",
-                        contents=[
-                            {
-                                "type": "function_call",
-                                "call_id": tool_call.id,
-                                "name": tool_call.function.name,
-                                "arguments": tool_call.function.arguments,
-                            }
-                            for tool_call in assistant_message.tool_calls
-                        ],
-                    )
+                result = await AGENT_REGISTRY[agent_name](
+                    query=agent_query, session_id=session_id
                 )
+                all_results[agent_name] = result
 
-                # Execute tools and add results to messages
-                for tool_call in assistant_message.tool_calls:
-                    func_name = tool_call.function.name
+            except Exception as e:
+                all_results[agent_name] = {"error": str(e)}
+        else:
+            all_results[agent_name] = {"error": f"Unknown agent: {agent_name}"}
 
-                    if func_name in tools:
-                        try:
-                            func = tools[func_name]
-                            result = func()
-                        except Exception as e:
-                            raise ValueError("Unable to call the function.") from e
+    # Flatten: if only one agent was called, return its results directly
+    if len(all_results) == 1:
+        agent_data = next(iter(all_results.values()))
+        return {
+            "response": agent_data.get("tool_results", {}),
+            "agent": agent_data.get("agent"),
+            "tools_called": agent_data.get("tools_called", []),
+        }
 
-                    else:
-                        print("Tool not found")
-
-                    messages.append(
-                        ChatMessage(
-                            role="tool",
-                            contents=[
-                                {
-                                    "type": "function_result",
-                                    "call_id": tool_call.id,
-                                    "result": result,
-                                }
-                            ],
-                        )
-                    )
-
-                continue
-
-        # Extract the assistant text
-        output = assistant_message.content or ""
-
-        return ChatResponse(
-            messages=[
-                ChatMessage(
-                    role="assistant",
-                    contents=[{"type": "text", "text": output}],
-                )
-            ]
-        )
-
-    async def _inner_get_streaming_response(self, *, messages, chat_options, **kwargs):
-        """Function used for streaming the response."""
-
-        yield ChatResponseUpdate(
-            role="assistant",
-            contents=[
-                {
-                    "type": "text",
-                    "text": "Hello",
-                }
-            ],
-        )
-
-
-# For testing without document metadata:
-orchestrator_prompt = load_prompt("orchestrator_prompt")
-
- 
-agent = OpenAIChat().create_agent(
-    name="Orchestrator Agent",
-    instructions=orchestrator_prompt,
-    tools=[get_summary, get_location, get_key_information],
-)
-
-
-async def main():
-    # Initialize dependencies before running the agent
-    await initialize_dependencies()
-
-    response = await agent.run("Summary")
-    print(response.messages[0].contents[0].text)
-    # print(response.text)
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    asyncio.run(main())
+    return {
+        "response": all_results,
+    }

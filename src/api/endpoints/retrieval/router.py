@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from src.api.session_utils import get_session_id
 from src.dependencies import get_service_container
+from src.tools.key_details import get_key_details
 from src.tools.summarizer import get_summary
 
 router = APIRouter()
@@ -70,5 +71,20 @@ async def get_chunks(
 
     return {
         "summary": result,
+        "session_id": session_id,
+    }
+
+
+@router.get("/key-details")
+async def key_details(
+    session_id: str = Depends(get_session_id),
+):
+    try:
+        result = await get_key_details(session_id=session_id)
+    except ValueError as err:
+        return {"error": str(err), "session_id": session_id}
+
+    return {
+        "key_details": result,
         "session_id": session_id,
     }
