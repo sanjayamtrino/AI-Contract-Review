@@ -58,6 +58,23 @@ async def query_document(
     }
 
 
+@router.get("/summarizer")
+async def get_chunks(
+    session_id: str = Depends(get_session_id),
+) -> Dict[str, Any]:
+    """Get summary for a specific session."""
+
+    try:
+        result = await get_summary(session_id=session_id)
+    except ValueError as err:
+        return {"error": str(err), "session_id": session_id}
+
+    return {
+        "summary": result,
+        "session_id": session_id,
+    }
+
+
 @router.get("/key-details")
 async def key_details(
     session_id: str = Depends(get_session_id),
