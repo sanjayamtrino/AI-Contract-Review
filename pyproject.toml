@@ -33,6 +33,7 @@ types-requests = "*"
 pystache = "*"
 agent-framework = { version = "*", allow-prereleases = true }
 agent-framework-azure-ai = { version = "*", allow-prereleases = true }
+ollama = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

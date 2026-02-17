@@ -20,9 +20,9 @@ from src.exceptions.parser_exceptions import (
 from src.schemas.registry import Chunk, ParseResult
 from src.services.registry.base_parser import BaseParser
 from src.services.session_manager import SessionData
-
-# from src.services.vector_store.embeddings.embedding_service import BGEEmbeddingService
-from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
+from src.services.vector_store.embeddings.base_embedding_service import (
+    BaseEmbeddingService,
+)
 from src.services.vector_store.manager import get_faiss_vector_store, index_chunks
 
 _SECTION_LABEL_RE = re.compile(
@@ -49,8 +49,10 @@ class DocxParser(BaseParser, Logger):
         """Initialize the parser."""
         super().__init__()
         self.settings = get_settings()
-        # self.embedding_service = BGEEmbeddingService()
-        self.embedding_service = JinaEmbeddings()
+        from src.dependencies import get_service_container
+
+        self.service_container = get_service_container()
+        self.embedding_service: BaseEmbeddingService = self.service_container.embedding_service
         self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
 
     @staticmethod

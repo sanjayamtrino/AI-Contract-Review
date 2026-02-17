@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Type
 
-from pydantic import BaseModel
-
 
 class BaseLLMModel(ABC):
     """Base interface for all LLM model implementations."""

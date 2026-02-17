@@ -37,7 +37,7 @@ class HuggingFaceEmbeddingService(BaseEmbeddingService, Logger):
         """Returns the embedding dimentions."""
         return self.tokenizer.get_sentence_embedding_dimension()
 
-    async def generate_embeddings(self, text: str) -> List[float]:
+    async def generate_embeddings(self, text: str, task: Optional[str] = None) -> List[float]:
         """Generate embeddings for the given text."""
 
         if not text or not text.strip():

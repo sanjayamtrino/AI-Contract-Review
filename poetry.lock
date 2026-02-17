@@ -2967,6 +2967,22 @@ signals = ["blinker (>=1.4.0)"]
 signedtoken = ["cryptography (>=3.0.0)", "pyjwt (>=2.0.0,<3)"]
 
 [[package]]
+name = "ollama"
+version = "0.6.1"
+description = "The official Python client for Ollama."
+optional = false
+python-versions = ">=3.8"
+groups = ["dev"]
+files = [
+    {file = "ollama-0.6.1-py3-none-any.whl", hash = "sha256:fc4c984b345735c5486faeee67d8a265214a31cbb828167782dc642ce0a2bf8c"},
+    {file = "ollama-0.6.1.tar.gz", hash = "sha256:478c67546836430034b415ed64fa890fd3d1ff91781a9d548b3325274e69d7c6"},
+]
+
+[package.dependencies]
+httpx = ">=0.27"
+pydantic = ">=2.9"
+
+[[package]]
 name = "openai"
 version = "2.16.0"
 description = "The official Python library for the openai API"
@@ -5736,4 +5752,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = "3.10"
-content-hash = "9a32210d6b697b075584aa5a2f9c47f15483cf5e38986039a8aee8cc2e77bd38"
+content-hash = "28445fc8b7ce8935a9e222df5bc9557fb15eeb23476fd0924b3388624720f0fe"

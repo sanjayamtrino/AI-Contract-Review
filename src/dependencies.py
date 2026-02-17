@@ -10,7 +10,10 @@ from src.services.retrieval.retrieval import RetrievalService
 from src.services.session_manager import SessionManager
 
 # from src.services.vector_store.embeddings.embedding_service import BGEEmbeddingService
-from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
+# from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
+from src.services.vector_store.embeddings.embedding_service import (
+    HuggingFaceEmbeddingService,
+)
 
 
 class ServiceContainer(Logger):
@@ -31,8 +34,9 @@ class ServiceContainer(Logger):
         self._retrieval_service: Optional[RetrievalService] = None
         self._azure_openai_model: Optional[AzureOpenAIModel] = None
         # self._gemini_model: Optional[GeminiModel] = None
-        # self._bge_embedding_service: Optional[BGEEmbeddingService] = None
-        self._bge_embedding_service: Optional[JinaEmbeddings] = None
+        # self._embedding_service: Optional[BGEEmbeddingService] = None
+        # self._embedding_service: Optional[JinaEmbeddings] = None
+        self._embedding_service: Optional[HuggingFaceEmbeddingService] = None
         self._session_manager: Optional[SessionManager] = None
         self._settings: Optional[Settings] = None
 
@@ -42,9 +46,10 @@ class ServiceContainer(Logger):
             self.logger.info("Initializing service container...")
 
             # Initialize embedding service first to get correct dimensions
-            # self._bge_embedding_service = BGEEmbeddingService()
-            self._bge_embedding_service = JinaEmbeddings()
-            embedding_dimension = self._bge_embedding_service.get_embedding_dimensions()
+            # self._embedding_service = BGEEmbeddingService()
+            # self._embedding_service = JinaEmbeddings()
+            self._embedding_service = HuggingFaceEmbeddingService()
+            embedding_dimension = self._embedding_service.get_embedding_dimensions()
             self.logger.info(f"BGEEmbeddingService initialized with dimension {embedding_dimension}")
 
             # Initialize session manager with correct embedding dimensions
@@ -93,7 +98,7 @@ class ServiceContainer(Logger):
             self._retrieval_service = None
             self._azure_openai_model = None
             self._gemini_model = None
-            self._bge_embedding_service = None
+            self._embedding_service = None
             self._session_manager = None
             self._settings = None
 
@@ -147,11 +152,12 @@ class ServiceContainer(Logger):
 
     @property
     # def bge_embedding_service(self) -> BGEEmbeddingService:
-    def bge_embedding_service(self) -> JinaEmbeddings:
+    # def bge_embedding_service(self) -> JinaEmbeddings:
+    def embedding_service(self) -> HuggingFaceEmbeddingService:
         """Get the BGE embedding service instance."""
-        if self._bge_embedding_service is None:
+        if self._embedding_service is None:
             raise RuntimeError("BGEEmbeddingService not initialized. Call initialize() first.")
-        return self._bge_embedding_service
+        return self._embedding_service
 
 
 # Global service container instance

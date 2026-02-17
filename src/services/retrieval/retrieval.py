@@ -4,18 +4,11 @@ from typing import Any, Dict, List, Optional
 from src.config.logging import Logger
 from src.config.settings import get_settings
 from src.schemas.query_rewriter import QueryRewriterResponse
-from src.services.llm.azure_openai_model import AzureOpenAIModel
-
-# from src.services.llm.gemini_model import GeminiModel
+from src.services.llm.base_model import BaseLLMModel
 from src.services.session_manager import SessionData
-
-# from src.services.vector_store.embeddings.embedding_service import (
-#     BGEEmbeddingService,
-#     # HuggingFaceEmbeddingService,
-# )
-from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
-
-# from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
+from src.services.vector_store.embeddings.base_embedding_service import (
+    BaseEmbeddingService,
+)
 from src.services.vector_store.manager import (
     get_chunks,
     get_chunks_from_session,
@@ -30,12 +23,11 @@ class RetrievalService(Logger):
         super().__init__()
 
         self.settings = get_settings()
-        # self.embedding_service = HuggingFaceEmbeddingService()
-        # self.embedding_service = OpenAIEmbeddings()
-        # self.embedding_service = BGEEmbeddingService()
-        self.embedding_service = JinaEmbeddings()
-        # self.llm = GeminiModel()
-        self.llm = AzureOpenAIModel()
+        from src.dependencies import get_service_container
+
+        service_container = get_service_container()
+        self.embedding_service: BaseEmbeddingService = service_container.embedding_service
+        self.llm: BaseLLMModel = service_container.azure_openai_model
         self.rewrite_query_prompt = Path(r"src\services\prompts\v1\query_rewriter.mustache").read_text()
         self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
 
