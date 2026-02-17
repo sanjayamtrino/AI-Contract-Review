@@ -8,7 +8,9 @@ from src.services.llm.azure_openai_model import AzureOpenAIModel
 # from src.services.llm.gemini_model import GeminiModel
 from src.services.retrieval.retrieval import RetrievalService
 from src.services.session_manager import SessionManager
-from src.services.vector_store.embeddings.embedding_service import BGEEmbeddingService
+
+# from src.services.vector_store.embeddings.embedding_service import BGEEmbeddingService
+from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
 
 
 class ServiceContainer(Logger):
@@ -29,7 +31,8 @@ class ServiceContainer(Logger):
         self._retrieval_service: Optional[RetrievalService] = None
         self._azure_openai_model: Optional[AzureOpenAIModel] = None
         # self._gemini_model: Optional[GeminiModel] = None
-        self._bge_embedding_service: Optional[BGEEmbeddingService] = None
+        # self._bge_embedding_service: Optional[BGEEmbeddingService] = None
+        self._bge_embedding_service: Optional[JinaEmbeddings] = None
         self._session_manager: Optional[SessionManager] = None
         self._settings: Optional[Settings] = None
 
@@ -39,7 +42,8 @@ class ServiceContainer(Logger):
             self.logger.info("Initializing service container...")
 
             # Initialize embedding service first to get correct dimensions
-            self._bge_embedding_service = BGEEmbeddingService()
+            # self._bge_embedding_service = BGEEmbeddingService()
+            self._bge_embedding_service = JinaEmbeddings()
             embedding_dimension = self._bge_embedding_service.get_embedding_dimensions()
             self.logger.info(f"BGEEmbeddingService initialized with dimension {embedding_dimension}")
 
@@ -142,7 +146,8 @@ class ServiceContainer(Logger):
     #     return self._gemini_model
 
     @property
-    def bge_embedding_service(self) -> BGEEmbeddingService:
+    # def bge_embedding_service(self) -> BGEEmbeddingService:
+    def bge_embedding_service(self) -> JinaEmbeddings:
         """Get the BGE embedding service instance."""
         if self._bge_embedding_service is None:
             raise RuntimeError("BGEEmbeddingService not initialized. Call initialize() first.")

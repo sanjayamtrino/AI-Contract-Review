@@ -20,12 +20,13 @@ from src.exceptions.parser_exceptions import (
 from src.schemas.registry import Chunk, ParseResult
 from src.services.registry.base_parser import BaseParser
 from src.services.session_manager import SessionData
-from src.services.vector_store.embeddings.embedding_service import (
-    BGEEmbeddingService,
-    # HuggingFaceEmbeddingService,
-)
 
-# from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
+# from src.services.vector_store.embeddings.embedding_service import (
+#     # BGEEmbeddingService,
+#     # HuggingFaceEmbeddingService,
+# )
+from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
+
 # from src.services.vector_store.embeddings.gemini_embeddings import (
 #     GeminiEmbeddingService,
 # )
@@ -42,10 +43,10 @@ class DocxParser(BaseParser, Logger):
         super().__init__()
         self.settings = get_settings()
         # self.embedding_service = HuggingFaceEmbeddingService()
-        self.embedding_service = BGEEmbeddingService()
+        # self.embedding_service = BGEEmbeddingService()
         # self.embedding_service = GeminiEmbeddingService()
         # self.embedding_service = OpenAIEmbeddings()
-        # self.embedding_service = JinaEmbeddings()
+        self.embedding_service = JinaEmbeddings()
         self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
 
     def _clean_text(self, text: str) -> str:

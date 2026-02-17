@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from pathlib import Path
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -13,6 +14,8 @@ from src.tools.summarizer import get_summary
 
 settings = get_settings()
 
+prompt = Path(r"src\services\prompts\v1\orchestrator_prompt.mustache").read_text()
+
 
 async def get_azure_agent() -> ChatAgent:
 
@@ -22,7 +25,7 @@ async def get_azure_agent() -> ChatAgent:
             api_key=settings.azure_openai_api_key,
             base_url=settings.base_url,
         ),
-        instructions="You are a helpful summary agent.",
+        instructions=prompt,
         tools=[get_summary, get_key_information],
     )
 

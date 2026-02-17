@@ -1,8 +1,11 @@
+import inspect
 import json
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from agent_framework import (
     BaseChatClient,
+    ChatAgent,
     ChatMessage,
     ChatResponse,
     ChatResponseUpdate,
@@ -12,7 +15,8 @@ from agent_framework._tools import FUNCTION_INVOKING_CHAT_CLIENT_MARKER
 
 from src.dependencies import get_service_container, initialize_dependencies
 from src.services.llm.azure_openai_model import AzureOpenAIModel
-from src.tools.summarizer import get_key_information, get_location, get_summary
+from src.tools.key_information import get_key_information
+from src.tools.summarizer import get_summary
 
 
 class OpenAIChat(BaseChatClient):
@@ -78,7 +82,6 @@ class OpenAIChat(BaseChatClient):
                     elif content.type == "function_result":
                         # tool results from function execution
                         result_content = content.result
-
                         messages_list.append(
                             {
                                 "role": "tool",
@@ -137,12 +140,21 @@ class OpenAIChat(BaseChatClient):
                     if func_name in tools:
                         try:
                             func = tools[func_name]
-                            result = func()
+
+                            # Parse arguments from the tool call (fix: was being ignored before)
+                            args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
+
+                            # Await if async, otherwise call normally (fix: async funcs were not awaited)
+                            if inspect.iscoroutinefunction(func):
+                                result = await func(**args)
+                            else:
+                                result = func(**args)
+
                         except Exception as e:
                             raise ValueError("Unable to call the function.") from e
-
                     else:
-                        print("Tool not found")
+                        print(f"Tool not found: {func_name}")
+                        result = f"Error: tool '{func_name}' not found."
 
                     messages.append(
                         ChatMessage(
@@ -159,21 +171,19 @@ class OpenAIChat(BaseChatClient):
 
                 continue
 
-        # Extract the assistant text
-        output = assistant_message.content or ""
-
-        return ChatResponse(
-            messages=[
-                ChatMessage(
-                    role="assistant",
-                    contents=[{"type": "text", "text": output}],
-                )
-            ]
-        )
+            # Extract the assistant text
+            output = assistant_message.content or ""
+            return ChatResponse(
+                messages=[
+                    ChatMessage(
+                        role="assistant",
+                        contents=[{"type": "text", "text": output}],
+                    )
+                ]
+            )
 
     async def _inner_get_streaming_response(self, *, messages, chat_options, **kwargs):
         """Function used for streaming the response."""
-
         yield ChatResponseUpdate(
             role="assistant",
             contents=[
@@ -185,20 +195,29 @@ class OpenAIChat(BaseChatClient):
         )
 
 
+prompt = Path(r"src\services\prompts\v1\orchestrator_prompt.mustache").read_text()
+
 agent = OpenAIChat().create_agent(
     name="Orchestrator Agent",
-    instructions="You are an helpfull AI assistant.",
-    tools=[get_summary, get_location, get_key_information],
+    instructions=prompt,
+    tools=[get_summary],
 )
+
+
+async def get_azure_agent() -> ChatAgent:
+    agent = OpenAIChat().create_agent(
+        name="Orchestrator Agent",
+        instructions=prompt,
+        tools=[get_summary, get_key_information],
+    )
+    return agent
 
 
 async def main():
     # Initialize dependencies before running the agent
     await initialize_dependencies()
-
     response = await agent.run("Summary")
     print(response.messages[0].contents[0].text)
-    # print(response.text)
 
 
 if __name__ == "__main__":

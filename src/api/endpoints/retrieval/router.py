@@ -24,6 +24,8 @@ prompt_template = Path(r"src\services\prompts\v1\llm_response.mustache").read_te
 @router.post("/query/")
 async def query_document(
     query: str,
+    top_k: int = 5,
+    dynamic_k: bool = False,
     session_id: str = Depends(get_session_id),
 ) -> Dict[str, Any]:
     """Query documents for a specific session."""
@@ -41,6 +43,8 @@ async def query_document(
 
     result = await retrieval_service.retrieve_data(
         query=query,
+        top_k=top_k,
+        dynamic_k=dynamic_k,
         session_data=session_data,
     )
 

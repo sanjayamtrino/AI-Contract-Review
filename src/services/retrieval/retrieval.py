@@ -8,12 +8,13 @@ from src.services.llm.azure_openai_model import AzureOpenAIModel
 
 # from src.services.llm.gemini_model import GeminiModel
 from src.services.session_manager import SessionData
-from src.services.vector_store.embeddings.embedding_service import (
-    BGEEmbeddingService,
-    # HuggingFaceEmbeddingService,
-)
 
-# from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
+# from src.services.vector_store.embeddings.embedding_service import (
+#     BGEEmbeddingService,
+#     # HuggingFaceEmbeddingService,
+# )
+from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
+
 # from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
 from src.services.vector_store.manager import (
     get_chunks,
@@ -31,8 +32,8 @@ class RetrievalService(Logger):
         self.settings = get_settings()
         # self.embedding_service = HuggingFaceEmbeddingService()
         # self.embedding_service = OpenAIEmbeddings()
-        self.embedding_service = BGEEmbeddingService()
-        # self.embedding_service = JinaEmbeddings()
+        # self.embedding_service = BGEEmbeddingService()
+        self.embedding_service = JinaEmbeddings()
         # self.llm = GeminiModel()
         self.llm = AzureOpenAIModel()
         self.rewrite_query_prompt = Path(r"src\services\prompts\v1\query_rewriter.mustache").read_text()
@@ -51,7 +52,7 @@ class RetrievalService(Logger):
         """Retrieve the whole document chunks."""
         return {}
 
-    async def retrieve_data(self, query: str, top_k: int = 5, threshold: Optional[float] = 0.0, session_data: Optional[SessionData] = None) -> Dict[str, Any]:
+    async def retrieve_data(self, query: str, top_k: int = 5, dynamic_k: bool = False, threshold: Optional[float] = 0.0, session_data: Optional[SessionData] = None) -> Dict[str, Any]:
         """Retrieve and return relevant document chunks based on query."""
 
         if not query or not query.strip():
@@ -63,6 +64,10 @@ class RetrievalService(Logger):
 
             all_hits: Dict[int, Dict[str, Any]] = {}
 
+            # If dynamic_k is enabled, we fetch more initial candidates to filter down
+            # If standard top_k is small, we want enough candidates to find the drop-off
+            initial_k = max(20, top_k * 3) if dynamic_k else top_k
+
             for query_rewriten in queries:
                 new_query = query + " | " + query_rewriten
                 print(new_query)
@@ -72,18 +77,17 @@ class RetrievalService(Logger):
                 # Search vector store for top-k similar embeddings
                 if session_data:
                     # Per-session search
-                    search_result = await session_data.vector_store.search_index(query_embedding, top_k)
+                    search_result = await session_data.vector_store.search_index(query_embedding, initial_k)
                     chunk_getter = lambda idx: get_chunks_from_session(session_data, [idx])  # noqa: E731
                 else:
                     # Global search (legacy)
-                    search_result = await self.vector_store.search_index(query_embedding, top_k)
+                    search_result = await self.vector_store.search_index(query_embedding, initial_k)
                     chunk_getter = lambda idx: get_chunks([idx])  # noqa: E731
 
                 indices = search_result.get("indices", [])
                 scores = search_result.get("scores", [])
 
                 # Fetch chunks from the manager by their indices
-                retrieved_chunks = []
                 for idx, score in zip(indices, scores):
                     if threshold is not None and score < threshold:
                         self.logger.debug(f"Skipping result with score {score} (below threshold {threshold})")
@@ -106,19 +110,56 @@ class RetrievalService(Logger):
                 all_hits.values(),
                 key=lambda x: x["similarity_score"],
                 reverse=True,
-            )[:top_k]
+            )
 
-            self.logger.info(f"Retrieved {len(ranked_chunks)} chunks for query")
+            # Apply dynamic top-k logic or standard top-k
+            final_chunks = []
+            if dynamic_k and ranked_chunks:
+                # Always keep the standard top_k at minimum (if available)
+                base_chunks = ranked_chunks[:top_k]
+                final_chunks.extend(base_chunks)
+
+                # Check remaining chunks
+                remaining_chunks = ranked_chunks[top_k:]
+                if base_chunks and remaining_chunks:
+                    last_score = base_chunks[-1]["similarity_score"]
+
+                    # Threshold: Score must be within X% of the last included chunk
+                    # or drop-off shouldn't be too steep.
+                    # Simple heuristic: If the next chunk is at least 95% as relevant as the last one, keep it.
+                    # We can also check against the very first chunk to ensure overall relevance.
+
+                    for chunk in remaining_chunks:
+                        current_score = chunk["similarity_score"]
+
+                        # Relative Drop Check
+                        if current_score >= last_score * 0.98:  # 2% drop tolerance
+                            final_chunks.append(chunk)
+                            last_score = current_score  # Update reference? Or keep strict reference?
+                            # Updating reference allows a gentle slope. Keeping strict reference enforces a hard shelf.
+                            # Let's update to allow gentle slope but maybe set a max limit?
+                        else:
+                            # Drop is too steep, stop here
+                            break
+
+                        # Safety break to avoid returning everything if scores are flat
+                        if len(final_chunks) >= top_k * 2:
+                            break
+            else:
+                final_chunks = ranked_chunks[:top_k]
+
+            self.logger.info(f"Retrieved {len(final_chunks)} chunks for query (requested top_k={top_k}, dynamic={dynamic_k})")
 
             return {
                 "query": new_query,
                 "rewritten_queries": queries,
-                "chunks": ranked_chunks,
-                "num_results": len(ranked_chunks),
+                "chunks": final_chunks,
+                "num_results": len(final_chunks),
                 "search_metadata": {
                     "search_time": search_result.get("search_time", 0),
                     "requested_top_k": top_k,
-                    "returned_results": len(retrieved_chunks),
+                    "dynamic_k_enabled": dynamic_k,
+                    "returned_results": len(final_chunks),
                 },
             }
 
