@@ -14,6 +14,7 @@ from src.services.session_manager import SessionManager
 from src.services.vector_store.embeddings.embedding_service import (
     HuggingFaceEmbeddingService,
 )
+from src.services.vector_store.faiss_db import FAISSVectorStore
 
 
 class ServiceContainer(Logger):
@@ -38,6 +39,7 @@ class ServiceContainer(Logger):
         # self._embedding_service: Optional[JinaEmbeddings] = None
         self._embedding_service: Optional[HuggingFaceEmbeddingService] = None
         self._session_manager: Optional[SessionManager] = None
+        self._faiss_store: Optional[FAISSVectorStore] = None
         self._settings: Optional[Settings] = None
 
     def initialize(self) -> None:
@@ -62,6 +64,10 @@ class ServiceContainer(Logger):
 
             # self._gemini_model = GeminiModel()
             # self.logger.info("GeminiModel initialized")
+
+            # Initialize FAISS Store
+            self._faiss_store = FAISSVectorStore(self._embedding_service.get_embedding_dimensions())
+            self.logger.info("FAISS Store initialized")
 
             # Initialize retrieval service
             self._retrieval_service = RetrievalService()
@@ -121,6 +127,13 @@ class ServiceContainer(Logger):
         if self._session_manager is None:
             raise RuntimeError("SessionManager not initialized. Call initialize() first.")
         return self._session_manager
+
+    @property
+    def faiss_store(self) -> FAISSVectorStore:
+        """Get the FAISS store instance."""
+        if self._faiss_store is None:
+            raise RuntimeError("SessionManager not initialized. Call initialize() first.")
+        return self._faiss_store
 
     @property
     def ingestion_service(self) -> IngestionService:

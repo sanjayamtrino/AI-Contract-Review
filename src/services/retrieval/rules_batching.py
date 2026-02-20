@@ -1,5 +1,5 @@
 import asyncio
-from typing import List
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -10,6 +10,64 @@ from src.schemas.rule_check import (
     RuleResult,
     TextInfo,
 )
+
+
+async def get_matching_pairs_faiss(request: RuleCheckRequest) -> List[RuleResult]:
+    """Get the matching pairs for the given rules with FAISS."""
+
+    service_container = get_service_container()
+    faiss_db = service_container.faiss_store
+    embedding_model = service_container.embedding_service
+
+    # Index all paragraph embeddings into FAISS
+    for item in request.textinformation:
+        embedd_vector = await embedding_model.generate_embeddings(item.text)
+        await faiss_db.index_embedding(embedd_vector)
+
+    results: List[RuleResult] = []
+
+    for rule in request.rulesinformation:
+        rule_text = f"title: {rule.title}. " f"description: {rule.description}. "  #  f"tags: {', '.join(rule.tags)}
+        rule_embedds = await embedding_model.generate_embeddings(rule_text)
+        faiss_result: Dict[str, Any] = await faiss_db.search_index(rule_embedds, top_k=3)
+
+        indices = faiss_result.get("indices", [])
+        scores = faiss_result.get("scores", [])
+
+        # Filter out invalid FAISS indices (-1 means no result found)
+        matched_pairs: List[ParaSimilarity] = [(idx, score) for idx, score in zip(indices, scores) if idx != -1 and idx < len(request.textinformation)]
+
+        if not matched_pairs:
+            results.append(
+                RuleResult(
+                    title=rule.title,
+                    instruction=rule.instruction,
+                    description="No relevant contract paragraphs found.",
+                    paragraphidentifier="",
+                    paragraphcontext="",
+                    similarity_scores=[],
+                )
+            )
+            continue
+
+        matched_paras = [request.textinformation[idx] for idx, _ in matched_pairs]
+        similarity_scores = [float(score) for _, score in matched_pairs]
+
+        para_ids = ",".join(p.paraindetifier for p in matched_paras)
+        para_context = "\n\n".join(f"[{p.paraindetifier}] {p.text.strip()}" for p in matched_paras)
+
+        results.append(
+            RuleResult(
+                title=rule.title,
+                instruction=rule.instruction,
+                description=rule.description,
+                paragraphidentifier=para_ids,
+                paragraphcontext=para_context,
+                similarity_scores=similarity_scores,
+            )
+        )
+
+    return results
 
 
 def find_similarity(rule_embedd: np.ndarray, para_embedds: np.ndarray, para_items: List[TextInfo], top_k: int = 3, threshold: float = 0.30) -> List[ParaSimilarity]:

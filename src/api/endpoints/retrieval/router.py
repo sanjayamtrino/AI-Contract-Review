@@ -7,17 +7,21 @@ from src.api.session_utils import get_session_id
 from src.dependencies import get_service_container
 from src.schemas.llm_response import QueryLLmResponse
 from src.schemas.rule_check import (
+    PlaybookAnalysisResponse,
     PlayBookReviewRequest,
     PlayBookReviewResponse,
     RuleCheckRequest,
     RuleResult,
 )
-from src.services.retrieval.rules_batching import get_matching_paras
+from src.services.retrieval.rules_batching import (
+    get_matching_pairs_faiss,
+    get_matching_paras,
+)
 
 router = APIRouter()
 
 llm_prompt_template = Path(r"src\services\prompts\v1\llm_response.mustache").read_text(encoding="utf-8")
-similarity_prompt_template = Path(r"src\services\prompts\v1\rule_check.mustache").read_text(encoding="utf-8")
+similarity_prompt_template = Path(r"src\services\prompts\v1\ai_review_prompt.mustache").read_text(encoding="utf-8")
 
 
 @router.post("/query/")
@@ -60,7 +64,7 @@ async def query_document(query: str, top_k: int = 5, dynamic_k: bool = False, se
 async def statistical_reivew(request: RuleCheckRequest) -> List[RuleResult]:
     """Playbook review endpoint to find similarity between paras and rules only."""
 
-    response: List[RuleResult] = await get_matching_paras(request=request)
+    response: List[RuleResult] = await get_matching_pairs_faiss(request=request)
 
     return response
 
@@ -72,20 +76,53 @@ async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
     service_container = get_service_container()
     llm_service = service_container.azure_openai_model
 
-    response: List[RuleResult] = await get_matching_paras(request=request)
+    response: List[RuleResult] = await get_matching_pairs_faiss(request=request)
 
     result: List[PlayBookReviewResponse] = []
     for res in response:
+        # print(res.instruction)
         context: Dict[str, Any] = {
             "rule_title": res.title,
+            "rule_instruction": res.instruction,
             "rule_description": res.description,
             "paragraphs": res.paragraphcontext,
         }
 
         llm_reponse = await llm_service.generate(prompt=similarity_prompt_template, context=context, response_model=PlayBookReviewResponse)
+        # print("#" * 20)
+        # print(llm_reponse)
+        # print("#" * 20)
         result.append(llm_reponse)
 
     return result
+
+
+@router.post("/playbook/test-ai")
+async def review(request: RuleCheckRequest) -> Any:
+    """Review API"""
+
+    service_container = get_service_container()
+    llm_service = service_container.azure_openai_model
+
+    # Load master prompt template
+    prompt = Path(r"src\services\prompts\v1\master_playbook_review_prompt.mustache").read_text()
+
+    # Get matching paragraphs (List[RuleResult])
+    rule_results: List[RuleResult] = await get_matching_paras(request=request)
+
+    # Transform RuleResult list into prompt-friendly structure
+    formatted_rules = []
+    for rule in rule_results:
+        formatted_rules.append(
+            {"title": rule.title, "instruction": rule.instruction, "description": rule.description, "paragraph_id": rule.paragraphidentifier, "paragraph_text": rule.paragraphcontext}
+        )
+
+    context: Dict[str, Any] = {"total_rules": len(formatted_rules), "rules": formatted_rules}
+
+    # Send to LLM
+    response = await llm_service.generate(prompt=prompt, context=context, response_model=PlaybookAnalysisResponse)
+
+    return response
 
 
 @router.post("/playbook/ai-rule-Review", response_model=PlayBookReviewResponse)

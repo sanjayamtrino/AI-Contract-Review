@@ -71,6 +71,12 @@ This application leverages AI to assist users in reviewing contracts efficiently
    1. `poetry run python -m src.api.main`
 4. Go to `http://localhost:8000/docs/` and test things out.
 
+## Test the AI PlayBook Review
+
+- go to `/playbook/ai-review/` and pass the correct and incorrect description payload.
+- If you want only the retrieved paragraphs wiithout the LLM call, you can call `/playbook/statistical-review` (This will give you what are the paragraphs similar to the rule and description with similarity scores, which we will pass them to the LLM in the next step.)
+- We can change the embedding similarity finding in the file `src\api\endpoints\retrieval\router.py` on line `67` and `79` to `get_matching_paras` instead of `get_matching_pairs_faiss`. (Normal similarity search is working a little bit good.)
+
 ## Test the embeddings similarity
 
 1. `poetry run python -m tests.test_embeddings`

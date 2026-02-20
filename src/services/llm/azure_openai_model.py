@@ -50,6 +50,10 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
 
         prompt = self.render_prompt_template(prompt=prompt, context=context)
 
+        # print("*" * 20)
+        # print(prompt)
+        # print("*" * 20)
+
         try:
             json_schema = response_model.model_json_schema()
 
