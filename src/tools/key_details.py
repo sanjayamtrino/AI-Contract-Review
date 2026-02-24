@@ -1,10 +1,9 @@
-from pathlib import Path
 from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field
 
 from src.dependencies import get_service_container
-from src.services.llm.azure_openai_model import AzureOpenAIModel
+from src.services.prompts.v1 import load_prompt
 from src.services.vector_store.manager import get_all_chunks
 
 # Pydantic Schemas
@@ -193,18 +192,16 @@ class KeyDetailsResponse(BaseModel):
 # LLM Execution Logic
 
 
-_llm = AzureOpenAIModel()
-
-
 async def get_key_details(session_id: Optional[str] = None) -> Any:
     """
     Extract structured key contract details from the currently ingested document.
     Works with session-based ingestion.
     """
 
+    container = get_service_container()
+
     # Prefer session-specific chunks if session_id is provided
     if session_id:
-        container = get_service_container()
         try:
             session = container.session_manager.get_session(session_id)
         except Exception:
@@ -223,10 +220,9 @@ async def get_key_details(session_id: Optional[str] = None) -> Any:
 
     full_text = "\n\n".join(chunk.content for chunk in results.values() if getattr(chunk, "content", None))
 
-    prompt_path = Path("src/services/prompts/v1/key_details_prompt_template_v1.mustache")
-    prompt = prompt_path.read_text(encoding="utf-8")
+    prompt = load_prompt("key_details_prompt_template_v1")
 
-    return await _llm.generate(
+    return await container.azure_openai_model.generate(
         prompt=prompt,
         context={"context": full_text},
         response_model=KeyDetailsResponse,
