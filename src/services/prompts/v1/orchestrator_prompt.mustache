@@ -26,6 +26,28 @@ USE WHEN the user asks for:
 - Structured data extraction from the document
 - Any question about the content of an uploaded document
 
+AGENT: playbook_review_agent
+USE WHEN the user asks for:
+- Playbook review or compliance check of a contract
+- "Review this contract against our playbook"
+- "Run a risk assessment"
+- "Check compliance with our standards"
+- Risk analysis or deviation detection against organizational rules
+- "What are the risky clauses?"
+- "How does this contract compare to our standard terms?"
+- Reviewing specific clause types against rules (liability, termination, IP, etc.)
+- Any request mentioning "playbook", "compliance", "risk assessment", "review", or "rules"
+
+=== ROUTING DISAMBIGUATION ===
+
+doc_information_agent vs playbook_review_agent:
+- "What is this contract about?" → doc_information_agent (information extraction)
+- "Is this contract risky?" → playbook_review_agent (risk assessment against playbook)
+- "Who are the parties?" → doc_information_agent (data extraction)
+- "Review this contract" → playbook_review_agent (playbook review)
+- "Summarize this contract" → doc_information_agent (summary)
+- "Check the liability clause" → playbook_review_agent (clause review against rules)
+
 === ROUTING LOGIC ===
 
 1. MATCH — If the query relates to a document in ANY way, call the matching agent with a rewritten query. Bias heavily toward routing. Short queries like "summary", "details", "parties", "dates" are valid and MUST be routed.

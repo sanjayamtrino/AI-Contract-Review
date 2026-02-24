@@ -25,6 +25,14 @@ class SessionData:
     metadata: Dict[str, Any] = field(default_factory=dict)
     # documents keyed by document_id containing metadata and chunk indices
     documents: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    conversation_history: List[Dict[str, str]] = field(default_factory=list)
+
+    def add_turn(self, role: str, content: str) -> None:
+        """Append a conversation turn. Auto-trims to last 20 messages (10 user + 10 assistant)."""
+        self.conversation_history.append({"role": role, "content": content})
+        MAX_MESSAGES = 20
+        if len(self.conversation_history) > MAX_MESSAGES:
+            self.conversation_history = self.conversation_history[-MAX_MESSAGES:]
 
     def refresh_access(self) -> None:
         """Update the last access timestamp."""
