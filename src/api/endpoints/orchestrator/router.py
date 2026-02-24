@@ -14,12 +14,12 @@ async def orchestrator_query(
     session_id: str = Depends(get_session_id),
 ) -> Dict[str, Any]:
     """
-    The orchestrator decides which tool to call
-    (get_summary or get_key_details)
-    based on the user's query.
+    The orchestrator decides which agent to route to
+    and returns a structured OrchestratorResponse.
+
+    Domain errors (agent failure, unknown agent, session not found) are
+    returned as 200 with an error field in the body. HTTP 500 means the
+    orchestrator itself is down.
     """
     result = await run_orchestrator(query=query, session_id=session_id)
-    return {
-        "session_id": session_id,
-        "response": result["response"],
-    }
+    return {"session_id": session_id, **result.model_dump()}
