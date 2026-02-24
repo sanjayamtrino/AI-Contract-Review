@@ -2,6 +2,7 @@ import json
 from typing import Any, Callable, Dict, List
 
 from src.dependencies import get_service_container
+from src.schemas.agents import AgentResponse
 from src.services.prompts.v1 import load_prompt
 from src.tools.key_details import get_key_details
 from src.tools.summarizer import get_summary
@@ -38,7 +39,7 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
 ]
 
 
-async def run(query: str, session_id: str) -> Dict[str, Any]:
+async def run(query: str, session_id: str) -> AgentResponse:
     """Doc Information Agent — decides which tool to use and executes it."""
 
     container = get_service_container()
@@ -51,25 +52,22 @@ async def run(query: str, session_id: str) -> Dict[str, Any]:
         {"role": "user", "content": query},
     ]
 
-    # Step 1: Ask the LLM which tool(s) to call
-    response = client.client.chat.completions.create(
-        model=client.deployment_name,
+    # Step 1: Ask the LLM which tool(s) to call (retry-wrapped)
+    response = await client.chat_completion(
         messages=messages,
-        temperature=0.3,
         tools=TOOL_DEFINITIONS,
         tool_choice="auto",
+        temperature=0.3,
     )
 
     assistant_message = response.choices[0].message
 
     # No tool calls — return the LLM's text response (clarification etc.)
     if not assistant_message.tool_calls:
-        return {
-            "agent": "doc_information",
-            "response": assistant_message.content or "",
-            "tools_called": [],
-            "tool_results": {},
-        }
+        return AgentResponse(
+            agent="doc_information",
+            response=assistant_message.content or "",
+        )
 
     # Step 2: Execute the tool(s) and return raw results directly
     tools_called: List[str] = []
@@ -89,11 +87,21 @@ async def run(query: str, session_id: str) -> Dict[str, Any]:
 
                 tools_called.append(func_name)
 
+            except ValueError as e:
+                tool_results[func_name] = {
+                    "error": str(e),
+                    "error_type": "tool_failure",
+                    "recoverable": False,
+                }
             except Exception as e:
-                tool_results[func_name] = {"error": str(e)}
+                tool_results[func_name] = {
+                    "error": str(e),
+                    "error_type": "internal_error",
+                    "recoverable": True,
+                }
 
-    return {
-        "agent": "doc_information",
-        "tools_called": tools_called,
-        "tool_results": tool_results,
-    }
+    return AgentResponse(
+        agent="doc_information",
+        tools_called=tools_called,
+        tool_results=tool_results,
+    )
