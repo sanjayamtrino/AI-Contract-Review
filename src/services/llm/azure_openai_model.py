@@ -63,7 +63,7 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
                     {"role": "system", "content": "Extract the information and return valid JSON."},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.8,
+                temperature=1.0,
                 response_format={
                     "type": "json_schema",
                     "json_schema": {

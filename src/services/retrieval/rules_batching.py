@@ -97,7 +97,7 @@ async def get_matching_paras(request: RuleCheckRequest) -> List[RuleResult]:
     service_container = get_service_container()
     embedding_model = service_container.embedding_service
 
-    rule_texts = [f"title: {rule.title}. " f"description: {rule.description}. " f"tags: {', '.join(rule.tags)}" for rule in request.rulesinformation]
+    rule_texts = [f"title: {rule.title}. " f"description: {rule.description}." for rule in request.rulesinformation]  # " f"tags: {', '.join(rule.tags)}"
     rule_embeddings = np.array(await asyncio.gather(*[embedding_model.generate_embeddings(text) for text in rule_texts]))
     para_embeddings = np.array(await asyncio.gather(*[embedding_model.generate_embeddings(item.text) for item in request.textinformation]))
 

@@ -8,13 +8,14 @@ from src.dependencies import get_service_container
 from src.schemas.llm_response import QueryLLmResponse
 from src.schemas.rule_check import (
     PlaybookAnalysisResponse,
+    PlayBookReviewLLMResponse,
     PlayBookReviewRequest,
     PlayBookReviewResponse,
     RuleCheckRequest,
     RuleResult,
 )
 from src.services.retrieval.rules_batching import (
-    get_matching_pairs_faiss,
+    # get_matching_pairs_faiss,
     get_matching_paras,
 )
 
@@ -64,7 +65,7 @@ async def query_document(query: str, top_k: int = 5, dynamic_k: bool = False, se
 async def statistical_reivew(request: RuleCheckRequest) -> List[RuleResult]:
     """Playbook review endpoint to find similarity between paras and rules only."""
 
-    response: List[RuleResult] = await get_matching_pairs_faiss(request=request)
+    response: List[RuleResult] = await get_matching_paras(request=request)
 
     return response
 
@@ -76,7 +77,7 @@ async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
     service_container = get_service_container()
     llm_service = service_container.azure_openai_model
 
-    response: List[RuleResult] = await get_matching_pairs_faiss(request=request)
+    response: List[RuleResult] = await get_matching_paras(request=request)
 
     result: List[PlayBookReviewResponse] = []
     for res in response:
@@ -88,11 +89,16 @@ async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
             "paragraphs": res.paragraphcontext,
         }
 
-        llm_reponse = await llm_service.generate(prompt=similarity_prompt_template, context=context, response_model=PlayBookReviewResponse)
-        # print("#" * 20)
-        # print(llm_reponse)
-        # print("#" * 20)
-        result.append(llm_reponse)
+        # print(context)
+
+        llm_reponse: PlayBookReviewLLMResponse = await llm_service.generate(prompt=similarity_prompt_template, context=context, response_model=PlayBookReviewLLMResponse)
+        response_item = PlayBookReviewResponse(
+            rule_title=res.title,
+            rule_instruction=res.instruction,
+            rule_description=res.description,
+            content=llm_reponse,
+        )
+        result.append(response_item)
 
     return result
 

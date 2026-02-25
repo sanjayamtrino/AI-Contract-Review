@@ -69,17 +69,28 @@ class PlayBookReviewRequest(BaseModel):
     paragraphs: List[str] = Field(..., description="list of retrieved paragraphs to validate with.")
 
 
+class PlayBookReviewLLMResponse(BaseModel):
+    """Schema for the LLM response for the given rule and para."""
+
+    para_identifiers: List[str] = Field(..., description="List of Paragraphs that matched the rule.")
+    status: ResponseStatus = Field(..., description="Status of the given rules and para (critical, medium, low, good)")
+    reason: str = Field(..., description="Reason of the Review either good or bad,")
+    suggestion: str = Field(..., description="A brief suggestion of the paragraphs over the rule.")
+    suggested_fix: str = Field(..., description="Suggested fix for the given rule and the paragraph.")
+
+
 class PlayBookReviewResponse(BaseModel):
     """Schema for AI review reponse for the given rules and paras."""
 
     rule_title: str = Field(..., description="Title of the rule that was considered.")
     rule_instruction: str = Field(..., description="Rule Instruction that was considered.")
     rule_description: str = Field(..., description="Rule Description that was considered.")
-    para_identifiers: List[str] = Field(..., description="List of Paragraphs that matched the rule.")
-    status: ResponseStatus = Field(..., description="Status of the given rules and para (critical, medium, low, good)")
-    reason: str = Field(..., description="Reason of the Review either good or bad,")
-    suggestion: str = Field(..., description="A brief suggestion of the paragraphs over the rule.")
-    suggested_fix: str = Field(..., description="Suggested fix for the given rule and the paragraph.")
+    # para_identifiers: List[str] = Field(..., description="List of Paragraphs that matched the rule.")
+    # status: ResponseStatus = Field(..., description="Status of the given rules and para (critical, medium, low, good)")
+    # reason: str = Field(..., description="Reason of the Review either good or bad,")
+    # suggestion: str = Field(..., description="A brief suggestion of the paragraphs over the rule.")
+    # suggested_fix: str = Field(..., description="Suggested fix for the given rule and the paragraph.")
+    content: PlayBookReviewLLMResponse = Field(..., description="Content of the review for the given rule and paragraphs.")
 
 
 class MatchedParagraph(BaseModel):
