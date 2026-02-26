@@ -68,6 +68,8 @@ class FAISSVectorStore(BaseVectorStore, Logger):
             scores, indices = self.index.search(query, top_k)
             elapsed_time = time.time() - start_time
 
+            self.logger.info(f"Search completed in {elapsed_time:.4f}s with top_k={top_k}.")
+
             return {
                 "scores": scores[0].tolist(),
                 "indices": indices[0].tolist(),

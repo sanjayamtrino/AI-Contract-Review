@@ -22,7 +22,7 @@ from src.services.retrieval.rules_batching import (
 router = APIRouter()
 
 llm_prompt_template = Path(r"src\services\prompts\v1\llm_response.mustache").read_text(encoding="utf-8")
-similarity_prompt_template = Path(r"src\services\prompts\v1\ai_review_prompt.mustache").read_text(encoding="utf-8")
+similarity_prompt_template = Path(r"src\services\prompts\v1\ai_review_prompt_v2.mustache").read_text(encoding="utf-8")
 
 
 @router.post("/query/")

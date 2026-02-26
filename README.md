@@ -76,6 +76,7 @@ This application leverages AI to assist users in reviewing contracts efficiently
 - go to `/playbook/ai-review/` and pass the correct and incorrect description payload.
 - If you want only the retrieved paragraphs wiithout the LLM call, you can call `/playbook/statistical-review` (This will give you what are the paragraphs similar to the rule and description with similarity scores, which we will pass them to the LLM in the next step.)
 - We can change the embedding similarity finding in the file `src\api\endpoints\retrieval\router.py` on line `67` and `79` to `get_matching_paras` instead of `get_matching_pairs_faiss`. (Normal similarity search is working a little bit good.)
+- There are two promtps for the PLAYBOOK REVIEW AGENT. You can change it in the `src\api\endpoints\retrieval\router.py` on the line `25` to `src\services\prompts\v1\ai_review_prompt_v2.mustache` or `src\services\prompts\v1\ai_review_prompt.mustache`.
 
 ## Test the embeddings similarity
 

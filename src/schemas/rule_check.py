@@ -50,14 +50,15 @@ class RuleResult(BaseModel):
 class ResponseStatus(str, Enum):
     """Response status for the AI Review."""
 
-    # CRITICAL = "critical"
-    # MEDIUM = "medium"
-    # LOW = "low"
-    # GOOD = "good"
+    CRITICAL = "Critical"
+    MEDIUM = "Medium"
+    LOW = "Low"
+    GOOD = "Good"
+    NOT_FOUND = "Not Found"
 
-    PASS = "PASS"
-    FAIL = "FAIL"
-    NOTFOUND = "NOT FOUND"
+    # PASS = "PASS"
+    # FAIL = "FAIL"
+    # NOTFOUND = "NOT FOUND"
 
 
 class PlayBookReviewRequest(BaseModel):
