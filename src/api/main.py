@@ -1,9 +1,16 @@
 import time
 from contextlib import asynccontextmanager
+from contextvars import copy_context
 
 import uvicorn
 from fastapi import FastAPI, Request
 
+from src.api.context import (
+    clear_context,
+    set_document_id,
+    set_request_id,
+    set_session_id,
+)
 from src.api.endpoints.admin.router import router as admin_router
 from src.api.endpoints.doc_information.router import router as doc_information_router
 from src.api.endpoints.ingestion.router import router as ingestion_router
@@ -34,6 +41,29 @@ app = FastAPI(
     debug=settings.debug,
     lifespan=lifespan,
 )
+
+
+# Add context middleware (session_id, document_id, request_id)
+@app.middleware("http")
+async def add_context_middleware(request: Request, call_next):
+    """Extract and set context variables from request headers."""
+    # Extract IDs from headers
+    session_id = request.headers.get("X-Session-ID")
+    document_id = request.headers.get("X-Document-ID")
+    request_id = request.headers.get("X-Request-ID")
+
+    # Set context variables (visible to all downstream calls in this request)
+    set_session_id(session_id)
+    set_document_id(document_id)
+    set_request_id(request_id)
+
+    try:
+        response = await call_next(request)
+    finally:
+        # Clear context after request is done
+        clear_context()
+
+    return response
 
 
 # Add request timing middleware

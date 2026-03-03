@@ -7,6 +7,14 @@ from pydantic import ValidationError
 
 from src.config.logging import Logger
 from src.config.settings import get_settings
+from src.exceptions.llm_exceptions import (
+    APIKeyNotConfigured,
+    BaseURLNotConfigured,
+    DeploymentNotConfigured,
+    EmptyResponseError,
+    LLMModelError,
+    ResponseParsingError,
+)
 from src.services.llm.base_model import BaseLLMModel
 
 
@@ -20,13 +28,13 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
         self.settings = get_settings()
 
         if not self.settings.azure_openai_api_key:
-            raise ValueError("Azure OpenAI API key is not configured.")
+            raise APIKeyNotConfigured("Azure OpenAI API key is not configured. Add it to the environment variables or configuration file as 'AZURE_OPENAI_API_KEY'.")
 
         if not self.settings.azure_openai_responses_deployment_name:
-            raise ValueError("Azure OpenAI deployment name is not configured.")
+            raise DeploymentNotConfigured("Azure OpenAI deployment name is not configured. Add it to the environment variables or configuration file as 'AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME'.")
 
         if not self.settings.base_url:
-            raise ValueError("Azure Base URL cannot be empty.")
+            raise BaseURLNotConfigured("Azure Base URL is not configured. Add it to the environment variables or configuration file as 'BASE_URL'.")
 
         self.client = OpenAI(
             base_url=self.settings.base_url,
@@ -49,10 +57,7 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
             raise ValueError("Deployment name is not configured.")
 
         prompt = self.render_prompt_template(prompt=prompt, context=context)
-
-        # print("*" * 20)
-        # print(prompt)
-        # print("*" * 20)
+        self.logger.info(f"Updated prompt for passing to the LLM: {prompt}")
 
         try:
             json_schema = response_model.model_json_schema()
@@ -77,7 +82,7 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
             # Extract and parse the JSON response
             response_text = response.choices[0].message.content
             if response_text is None:
-                raise ValueError("Empty response from LLM model.")
+                raise EmptyResponseError("Received empty response from LLM model, try once more or debug the prompt.")
             response_data = json.loads(response_text)
 
             # Validate and convert to Pydantic model
@@ -85,8 +90,8 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
             return validated_response
 
         except (json.JSONDecodeError, ValidationError) as e:
-            self.logger.error(f"Response parsing failed: {str(e)}.")
-            raise ValueError("Cannot perform the query rewriting.") from e
+            self.logger.error(f"Failed to parse the LLM response. The response format might be incorrect or not matching the expected schema: {str(e)}.")
+            raise ResponseParsingError("Failed to parse the LLM response. The response format might be incorrect or not matching the expected schema.") from e
         except Exception as e:
-            self.logger.error(f"LLM generation failed: {str(e)}")
-            raise ValueError("Cannot perform the query rewriting.") from e
+            self.logger.error(f"An error occurred while generating response from the LLM model: {str(e)}")
+            raise LLMModelError("An error occurred while generating response from the LLM model.") from e

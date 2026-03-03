@@ -7,6 +7,22 @@ from typing import Any, Dict
 from src.config.settings import get_settings
 
 
+class ContextualFilter(logging.Filter):
+    """Filter that adds context variables (session_id, document_id, request_id) to log records."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Add context variables to the log record."""
+        try:
+            from src.api.context import get_session_id
+
+            record.session_id = get_session_id() or "-"
+        except (ImportError, RuntimeError):
+            # Import error can happen at startup, runtime error if context not initialized
+            record.session_id = "-"
+
+        return True
+
+
 def setup_logging() -> None:
     """Set up application logging configuration."""
     settings = get_settings()
@@ -23,13 +39,19 @@ def setup_logging() -> None:
     logging_config: Dict[str, Any] = {
         "version": 1,
         "disable_existing_loggers": False,
+        "filters": {
+            "contextual": {
+                "()": ContextualFilter,
+            }
+        },
         "formatters": {
-            "detailed": {"format": ("%(asctime)s - %(name)s - %(levelname)s - " "%(filename)s:%(lineno)d - %(funcName)s - %(message)s")},
-            "simple": {"format": "%(asctime)s - %(levelname)s - %(message)s"},
+            "detailed": {"format": ("%(asctime)s - %(name)s - %(levelname)s - " "[session:%(session_id)s] - " "%(filename)s:%(lineno)d - %(funcName)s - %(message)s")},
+            "simple": {"format": "%(asctime)s - %(levelname)s - [%(session_id)s] - %(message)s"},
             "json": {
                 "format": (
-                    '{"timestamp": "%(asctime)s", "logger": "%(name)s", '
-                    '"level": "%(levelname)s", "file": "%(filename)s", '
+                    '{"timestamp": "%(asctime)s", "session_id": "%(session_id)s", '
+                    '"document_id": "%(document_id)s", "request_id": "%(request_id)s", '
+                    '"logger": "%(name)s", "level": "%(levelname)s", "file": "%(filename)s", '
                     '"line": %(lineno)d, "function": "%(funcName)s", '
                     '"message": "%(message)s"}'
                 )
@@ -41,6 +63,7 @@ def setup_logging() -> None:
                 "level": "INFO",
                 "formatter": "simple",
                 "stream": "ext://sys.stdout",
+                "filters": ["contextual"],
             },
             "file": {
                 "class": "logging.handlers.RotatingFileHandler",
@@ -49,6 +72,7 @@ def setup_logging() -> None:
                 "filename": log_filename,
                 "maxBytes": 10485760,  # 10MB
                 "backupCount": 5,
+                "filters": ["contextual"],
             },
             "error_file": {
                 "class": "logging.handlers.RotatingFileHandler",
@@ -57,6 +81,7 @@ def setup_logging() -> None:
                 "filename": os.path.join(settings.logs_directory, "errors.log"),
                 "maxBytes": 10485760,  # 10MB
                 "backupCount": 5,
+                "filters": ["contextual"],
             },
         },
         "loggers": {

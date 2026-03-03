@@ -16,14 +16,16 @@ from src.exceptions.parser_exceptions import (
     DocxMetadataExtractionException,
     DocxParagraphExtractionException,
     DocxTableExtractionException,
+    EmptyTextException,
 )
 from src.schemas.registry import Chunk, ParseResult
+from src.schemas.rule_check import TextInfo
 from src.services.registry.base_parser import BaseParser
 from src.services.session_manager import SessionData
 from src.services.vector_store.embeddings.base_embedding_service import (
     BaseEmbeddingService,
 )
-from src.services.vector_store.manager import get_faiss_vector_store, index_chunks
+from src.services.vector_store.manager import get_faiss_vector_store
 
 _SECTION_LABEL_RE = re.compile(
     r"^("
@@ -111,7 +113,7 @@ class DocxParser(BaseParser, Logger):
         """Clean the text to remove unwanted characters."""
 
         if not text or not text.strip():
-            raise ValueError("Text cannot be empty.")
+            raise EmptyTextException("Text cannot be empty. Please provide valid text content.")
 
         text = re.sub(r"\s+", " ", text).strip()
         text = text.replace("\u00a0", " ")
@@ -135,6 +137,7 @@ class DocxParser(BaseParser, Logger):
         """Extract document metadata."""
 
         try:
+            self.logger.info("Extracting metadata from the document.")
             properties = document.core_properties
             paragraph_words = sum(len(p.text.split()) for p in document.paragraphs)
             table_words = sum(len(cell.text.split()) for table in document.tables for row in table.rows for cell in row.cells)
@@ -157,6 +160,7 @@ class DocxParser(BaseParser, Logger):
         try:
             tables = []
             for t_idx, table in enumerate(document.tables):
+                self.logger.info("Cleaned text content for chunking.")
                 rows = [[self._clean_text(cell.text) for cell in row.cells] for row in table.rows]
                 tables.append(
                     {
@@ -185,6 +189,7 @@ class DocxParser(BaseParser, Logger):
                                 "is_heading": is_heading,
                             }
                         )
+            self.logger.info("Cleaned text content for chunking.")
             return data
         except Exception as e:
             raise DocxParagraphExtractionException(str(e)) from e
@@ -246,7 +251,47 @@ class DocxParser(BaseParser, Logger):
 
         return chunks
 
-    async def parse(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
+    async def parse_data(self, data: List[TextInfo], session_data: Optional[Any] = None) -> ParseResult:
+        """Parse data using the registry services."""
+        start = time.time()
+
+        paragraphs = []
+        for d in data:
+            paragraphs.append(d.text)
+        if not paragraphs:
+            raise ValueError("No paragraphs found in the data.")
+
+        # Embed each paragraph and index it
+        for para in paragraphs:
+            text = para
+            if not text:
+                continue
+            vector = await self.embedding_service.generate_embeddings(text=text, task="text-matching")
+            await self.vector_store.index_embedding(vector)
+
+        chunks: List[Chunk] = []
+
+        for i in range(len(paragraphs)):
+            chunk = Chunk(
+                chunk_id=str(uuid.uuid4()),
+                document_id=None,
+                chunk_index=i,
+                content=paragraphs[i],
+                embedding_model=self.embedding_service.model_name,
+                embedding_vector=None,
+                metadata={"chunk_type": "semantic_paragraph"},
+                created_at=datetime.utcnow().isoformat(),
+            )
+            chunks.append(chunk)
+
+        return ParseResult(
+            success=True,
+            chunks=chunks,
+            metadata={"paragraph_count": len(paragraphs), "source": "parsed_data"},
+            processing_time=time.time() - start,
+        )
+
+    async def parse_document(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
         start = time.time()
 
         try:
@@ -273,6 +318,7 @@ class DocxParser(BaseParser, Logger):
                 if not cleaned:
                     continue
 
+                self.logger.info("Cleaned text content for chunking.")
                 vector = await self.embedding_service.generate_embeddings(text=cleaned, task="text-matching")
                 await vector_store.index_embedding(vector)
 
@@ -297,6 +343,7 @@ class DocxParser(BaseParser, Logger):
                 if not table_text:
                     continue
 
+                self.logger.info("Cleaned text content for chunking.")
                 vector = await self.embedding_service.generate_embeddings(text=table_text)
                 await vector_store.index_embedding(vector)
 
@@ -317,13 +364,6 @@ class DocxParser(BaseParser, Logger):
                     )
                 )
                 chunk_index += 1
-
-            if session_data:
-                from src.services.vector_store.manager import index_chunks_in_session
-
-                index_chunks_in_session(session_data, chunks, metadata)
-            else:
-                index_chunks(chunks)
 
             return ParseResult(
                 success=True,

@@ -12,8 +12,13 @@ class BaseParser(ABC, Logger):
     """Abstract base class for parsers in the registry service."""
 
     @abstractmethod
-    async def parse(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
+    async def parse_document(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
         """Parse the given document."""
+        pass
+
+    @abstractmethod
+    async def parse_data(self, data: Any, session_data: Optional["SessionData"] = None) -> ParseResult:
+        """Parse the given data."""
         pass
 
     @abstractmethod

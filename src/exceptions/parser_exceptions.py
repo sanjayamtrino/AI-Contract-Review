@@ -27,3 +27,17 @@ class DocxTableExtractionException(AppException):
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
+
+
+class EmptyTextException(AppException):
+    """Exception raised when the extracted text from a document is empty."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class ParserAlreadyRegistered(AppException):
+    """Exception raised when trying to register a parser that is already registered."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)

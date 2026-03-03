@@ -5,6 +5,13 @@ import faiss
 import numpy as np
 
 from src.config.logging import Logger
+from src.exceptions.faiss_exceptions import (
+    FAISSDimensionMismatchException,
+    FAISSEmptyEmbeddingException,
+    FAISSEmptyQueryException,
+    FAISSUnableToIndexException,
+    FAISSUnableToSearchException,
+)
 from src.services.vector_store.base_store import BaseVectorStore
 
 
@@ -28,14 +35,14 @@ class FAISSVectorStore(BaseVectorStore, Logger):
         if vector.ndim == 1:
             vector = vector.reshape(1, -1)
         if vector.shape[1] != self.dimension:
-            raise ValueError(f"Expected dimension {self.dimension}, got {vector.shape[1]}")
+            raise FAISSDimensionMismatchException(expected_dim=self.dimension, actual_dim=vector.shape[1])
         faiss.normalize_L2(vector)
         return vector
 
     async def index_embedding(self, embedding: List[float]) -> None:
         """Add a single embedding vector to the FAISS index."""
         if not embedding:
-            raise ValueError("Embeddings list cannot be empty.")
+            raise FAISSEmptyEmbeddingException("Cannot index an empty embedding vector.")
 
         vector = np.array(embedding, dtype=np.float32)
 
@@ -44,6 +51,7 @@ class FAISSVectorStore(BaseVectorStore, Logger):
             vector = self._validate_vectors(vector)
             self.index.add(vector)
             elapsed_time = time.time() - start_time
+            self.logger.info(f"Indexed embedding of shape {vector.shape} into FAISS in {elapsed_time:.4f}s.")
 
             # Update stats
             self.stats["vectors_added"] += vector.shape[0]
@@ -51,13 +59,13 @@ class FAISSVectorStore(BaseVectorStore, Logger):
 
             self.logger.info(f"Added {vector.shape[0]} vector in {elapsed_time:.4f}s")
         except Exception as e:
-            raise ValueError("Unable to index embeddings into database.") from e
+            raise FAISSUnableToIndexException("Unable to index embeddings into database.") from e
 
     async def search_index(self, query_embedding: List[float], top_k: int = 5) -> Dict[str, Any]:
         """Perform cosine similarity and return the top-k indices."""
 
         if not query_embedding:
-            raise ValueError("Query Embedding cannot be empty.")
+            raise FAISSEmptyQueryException("Query Embedding cannot be empty.")
 
         try:
             query = np.array(query_embedding, dtype=np.float32)
@@ -76,4 +84,4 @@ class FAISSVectorStore(BaseVectorStore, Logger):
                 "search_time": elapsed_time,
             }
         except Exception as e:
-            raise ValueError("Unable to search the query in the database.") from e
+            raise FAISSUnableToSearchException("Unable to search the query in the database.") from e

@@ -37,6 +37,7 @@ class RetrievalService(Logger):
         context: Dict[str, Any] = {
             "query": query,
         }
+        self.logger.info(f"Rewriting query: {query}")
         response: QueryRewriterResponse = await self.llm.generate(prompt=self.rewrite_query_prompt, context=context, response_model=QueryRewriterResponse)
         return [q.query for q in response.queries]
 
@@ -53,6 +54,7 @@ class RetrievalService(Logger):
         try:
             queries = await self.rewrite_query(query=query)
             # queries = [query]
+            self.logger.info(f"Generated {len(queries)} rewritten queries for the original query: '{query}'")
 
             all_hits: Dict[int, Dict[str, Any]] = {}
 
@@ -62,18 +64,20 @@ class RetrievalService(Logger):
 
             for query_rewriten in queries:
                 new_query = query + " | " + query_rewriten
-                print(new_query)
                 # Generate query embedding
+                self.logger.info(f"Generating embedding for the query: '{new_query}'")
                 query_embedding = await self.embedding_service.generate_embeddings(text=new_query, task="retrieval.query")
 
                 # Search vector store for top-k similar embeddings
                 if session_data:
                     # Per-session search
                     search_result = await session_data.vector_store.search_index(query_embedding, initial_k)
+                    self.logger.info(f"Searching for similar chunks in session {session_data.session_id} for query: '{new_query}'")
                     chunk_getter = lambda idx: get_chunks_from_session(session_data, [idx])  # noqa: E731
                 else:
                     # Global search (legacy)
                     search_result = await self.vector_store.search_index(query_embedding, initial_k)
+                    self.logger.info(f"Searching for similar chunks in global vector store for query: '{new_query}'")
                     chunk_getter = lambda idx: get_chunks([idx])  # noqa: E731
 
                 indices = search_result.get("indices", [])
