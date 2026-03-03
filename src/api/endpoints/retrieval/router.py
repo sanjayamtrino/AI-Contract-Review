@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from src.api.session_utils import get_session_id
 from src.dependencies import get_service_container
@@ -148,3 +149,33 @@ async def review_rules(request: PlayBookReviewRequest) -> PlayBookReviewResponse
     llm_result = await llm_service.generate(prompt=similarity_prompt_template, context=context, response_model=PlayBookReviewResponse)
 
     return llm_result
+
+
+class GeneralReviewResponse(BaseModel):
+    reason: str
+    suggested_fix: str
+
+
+class GeneralReviewRequest(BaseModel):
+    paragraph: str
+    rule: str
+
+
+@router.post("/general-review/", response_model=GeneralReviewResponse)
+async def general_review(request: GeneralReviewRequest) -> GeneralReviewResponse:
+    """General review endpoint for any custom review between rules and paras."""
+
+    service_container = get_service_container()
+    llm_service = service_container.azure_openai_model
+
+    prompt = Path(r"src\services\prompts\v1\general_review.mustache").read_text()
+    print(prompt)
+
+    context = {
+        "paragraph": request.paragraph,
+        "rule": request.rule,
+    }
+
+    response = await llm_service.generate(prompt=prompt, context=context, response_model=GeneralReviewResponse)
+
+    return response
