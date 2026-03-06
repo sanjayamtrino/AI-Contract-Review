@@ -8,17 +8,19 @@ from src.api.session_utils import get_session_id
 from src.dependencies import get_service_container
 from src.schemas.llm_response import QueryLLmResponse
 from src.schemas.rule_check import (
-    PlaybookAnalysisResponse,
+    # PlaybookAnalysisResponse,
     PlayBookReviewLLMResponse,
-    PlayBookReviewRequest,
+    # PlayBookReviewRequest,
     PlayBookReviewResponse,
     RuleCheckRequest,
     RuleResult,
 )
-from src.services.retrieval.rules_batching import (
-    # get_matching_pairs_faiss,
-    get_matching_paras,
-)
+
+# from src.services.retrieval.rules_batching import (
+#     # get_matching_pairs_faiss,
+#     get_matching_paras,
+# )
+from src.tools.playbook_review import get_matching_pairs_faiss, get_matching_paras
 
 router = APIRouter()
 
@@ -103,52 +105,51 @@ async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
 
     return result
 
+    # @router.post("/playbook/test-ai")
+    # async def review(request: RuleCheckRequest) -> Any:
+    #     """Review API"""
 
-@router.post("/playbook/test-ai")
-async def review(request: RuleCheckRequest) -> Any:
-    """Review API"""
+    #     service_container = get_service_container()
+    #     llm_service = service_container.azure_openai_model
 
-    service_container = get_service_container()
-    llm_service = service_container.azure_openai_model
+    #     # Load master prompt template
+    #     prompt = Path(r"src\services\prompts\v1\master_playbook_review_prompt.mustache").read_text()
 
-    # Load master prompt template
-    prompt = Path(r"src\services\prompts\v1\master_playbook_review_prompt.mustache").read_text()
+    #     # Get matching paragraphs (List[RuleResult])
+    #     rule_results: List[RuleResult] = await get_matching_paras(request=request)
 
-    # Get matching paragraphs (List[RuleResult])
-    rule_results: List[RuleResult] = await get_matching_paras(request=request)
+    #     # Transform RuleResult list into prompt-friendly structure
+    #     formatted_rules = []
+    #     for rule in rule_results:
+    #         formatted_rules.append(
+    #             {"title": rule.title, "instruction": rule.instruction, "description": rule.description, "paragraph_id": rule.paragraphidentifier, "paragraph_text": rule.paragraphcontext}
+    #         )
 
-    # Transform RuleResult list into prompt-friendly structure
-    formatted_rules = []
-    for rule in rule_results:
-        formatted_rules.append(
-            {"title": rule.title, "instruction": rule.instruction, "description": rule.description, "paragraph_id": rule.paragraphidentifier, "paragraph_text": rule.paragraphcontext}
-        )
+    #     context: Dict[str, Any] = {"total_rules": len(formatted_rules), "rules": formatted_rules}
 
-    context: Dict[str, Any] = {"total_rules": len(formatted_rules), "rules": formatted_rules}
+    #     # Send to LLM
+    #     response = await llm_service.generate(prompt=prompt, context=context, response_model=PlaybookAnalysisResponse)
 
-    # Send to LLM
-    response = await llm_service.generate(prompt=prompt, context=context, response_model=PlaybookAnalysisResponse)
-
-    return response
+    # return response
 
 
-@router.post("/playbook/ai-rule-Review", response_model=PlayBookReviewResponse)
-async def review_rules(request: PlayBookReviewRequest) -> PlayBookReviewResponse:
-    """Review the rule against the given paras."""
+# @router.post("/playbook/ai-rule-Review", response_model=PlayBookReviewResponse)
+# async def review_rules(request: PlayBookReviewRequest) -> PlayBookReviewResponse:
+#     """Review the rule against the given paras."""
 
-    service_container = get_service_container()
-    llm_service = service_container.azure_openai_model
+#     service_container = get_service_container()
+#     llm_service = service_container.azure_openai_model
 
-    context: Dict[str, Any] = {
-        "rule_title": request.rule_title,
-        # "rule_instruction": request.instruction,
-        "rule_description": request.description,
-        "paragraphs": " ".join([para for para in request.paragraphs]),
-    }
+#     context: Dict[str, Any] = {
+#         "rule_title": request.rule_title,
+#         # "rule_instruction": request.instruction,
+#         "rule_description": request.description,
+#         "paragraphs": " ".join([para for para in request.paragraphs]),
+#     }
 
-    llm_result = await llm_service.generate(prompt=similarity_prompt_template, context=context, response_model=PlayBookReviewResponse)
+#     llm_result = await llm_service.generate(prompt=similarity_prompt_template, context=context, response_model=PlayBookReviewResponse)
 
-    return llm_result
+#     return llm_result
 
 
 class GeneralReviewResponse(BaseModel):

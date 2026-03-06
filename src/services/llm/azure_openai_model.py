@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, Type
+from typing import Any, Dict, Type, Union
 
 import pystache
 from openai import OpenAI
@@ -50,7 +50,7 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
 
         return pystache.render(template=prompt, context=context)
 
-    async def generate(self, prompt: str, context: Dict[str, Any], response_model: Type) -> Any:
+    async def generate(self, prompt: str, context: Dict[str, Any], response_model: Union[Type, None], mode: str = "JSON") -> Any:
         """Main function to generate response."""
 
         if self.deployment_name is None:
@@ -59,39 +59,59 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
         prompt = self.render_prompt_template(prompt=prompt, context=context)
         self.logger.info(f"Updated prompt for passing to the LLM: {prompt}")
 
-        try:
-            json_schema = response_model.model_json_schema()
+        if mode == "JSON" and response_model is not None:
+            try:
+                json_schema = response_model.model_json_schema()
 
-            response = self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=[
-                    {"role": "system", "content": "Extract the information and return valid JSON."},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.2,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": response_model.__name__,
-                        "schema": json_schema,
-                        "strict": False,
+                response = self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=[
+                        {"role": "system", "content": "Extract the information and return valid JSON."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": response_model.__name__,
+                            "schema": json_schema,
+                            "strict": False,
+                        },
                     },
-                },
-            )
+                )
 
-            # Extract and parse the JSON response
-            response_text = response.choices[0].message.content
-            if response_text is None:
-                raise EmptyResponseError("Received empty response from LLM model, try once more or debug the prompt.")
-            response_data = json.loads(response_text)
+                # Extract and parse the JSON response
+                response_text = response.choices[0].message.content
+                if response_text is None:
+                    raise EmptyResponseError("Received empty response from LLM model, try once more or debug the prompt.")
+                response_data = json.loads(response_text)
 
-            # Validate and convert to Pydantic model
-            validated_response = response_model.model_validate(response_data)
-            return validated_response
+                # Validate and convert to Pydantic model
+                validated_response = response_model.model_validate(response_data)
+                return validated_response
 
-        except (json.JSONDecodeError, ValidationError) as e:
-            self.logger.error(f"Failed to parse the LLM response. The response format might be incorrect or not matching the expected schema: {str(e)}.")
-            raise ResponseParsingError("Failed to parse the LLM response. The response format might be incorrect or not matching the expected schema.") from e
-        except Exception as e:
-            self.logger.error(f"An error occurred while generating response from the LLM model: {str(e)}")
-            raise LLMModelError("An error occurred while generating response from the LLM model.") from e
+            except (json.JSONDecodeError, ValidationError) as e:
+                self.logger.error(f"Failed to parse the LLM response. The response format might be incorrect or not matching the expected schema: {str(e)}.")
+                raise ResponseParsingError("Failed to parse the LLM response. The response format might be incorrect or not matching the expected schema.") from e
+            except Exception as e:
+                self.logger.error(f"An error occurred while generating response from the LLM model: {str(e)}")
+                raise LLMModelError("An error occurred while generating response from the LLM model.") from e
+
+        else:
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=[
+                        {"role": "system", "content": "Extract the information and return valid Markdown format."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                )
+                response_text = response.choices[0].message.content
+                if response_text is None:
+                    raise EmptyResponseError("Received empty response from LLM model, try once more or debug the prompt.")
+                return response_text
+
+            except Exception as e:
+                self.logger.error(f"An error occurred while generating response from the LLM model: {str(e)}")
+                raise LLMModelError("An error occurred while generating response from the LLM model.") from e

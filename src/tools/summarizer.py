@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Optional
 
+from pydantic import BaseModel
+
 from src.dependencies import get_service_container
 from src.schemas.tool_schema import SummaryToolResponse
 from src.services.llm.azure_openai_model import AzureOpenAIModel
@@ -9,7 +11,7 @@ from src.services.vector_store.manager import get_all_chunks
 llm_service = AzureOpenAIModel()
 
 
-async def get_summary(session_id: Optional[str], response: str = "JSON") -> str:
+async def get_summary(session_id: Optional[str], response: str = "JSON") -> str | BaseModel:
     """Summary tool for the orchestrator agent or API."""
 
     # Prefer session-specific chunks when session_id provided
@@ -32,9 +34,6 @@ async def get_summary(session_id: Optional[str], response: str = "JSON") -> str:
     prompt_template = Path(r"src\services\prompts\v1\summary_prompt_template.mustache").read_text()
     context = {"text": full_text}
 
-    summary: SummaryToolResponse = await llm_service.generate(prompt=prompt_template, context=context, response_model=SummaryToolResponse)
+    summary: str | SummaryToolResponse = await llm_service.generate(prompt=prompt_template, context=context, response_model=None, mode="markdown")
 
-    if response == "JSON":
-        return summary.summary
-    else:
-        return summary
+    return summary

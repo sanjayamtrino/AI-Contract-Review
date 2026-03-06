@@ -36,9 +36,11 @@ async def get_key_information(session_id: Optional[str] = None, response_format:
 
     prompt_path = Path(r"src\services\prompts\v1\key_information_prompt.mustache").read_text(encoding="utf-8")
 
-    response: KeyInformationToolResponse = await _llm.generate(prompt=prompt_path, context={"contract_text": full_text}, response_model=KeyInformationToolResponse)
+    response: str | KeyInformationToolResponse = await _llm.generate(
+        prompt=prompt_path,
+        context={"contract_text": full_text},
+        response_model=None,
+        mode="markdown",
+    )
 
-    if response_format == "JSON":
-        return response.model_dump()
-    else:
-        return response
+    return response
