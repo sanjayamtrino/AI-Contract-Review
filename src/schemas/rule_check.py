@@ -65,7 +65,7 @@ class PlayBookReviewRequest(BaseModel):
     """Schema for the AI review request."""
 
     rule_title: str = Field(..., description="Title of the rule to be compared.")
-    # instruction: str = Field(..., description="Instructions for the given rule")
+    instruction: str = Field(..., description="Instructions for the given rule.")  # was commented out — needed by router
     description: str = Field(..., description="Detailed description of the given rule.")
     paragraphs: List[str] = Field(..., description="list of retrieved paragraphs to validate with.")
 
