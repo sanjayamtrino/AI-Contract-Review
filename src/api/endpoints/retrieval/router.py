@@ -64,7 +64,6 @@ async def statistical_reivew(request: RuleCheckRequest) -> List[RuleResult]:
 
 @router.post("/playbook/ai-review", response_model=List[PlayBookReviewResponse])
 async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
-    """Playbook review endpoint to find similarity between paras and rules and return the LLM response."""
 
     service_container = get_service_container()
     llm_service = service_container.azure_openai_model
@@ -72,14 +71,13 @@ async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
     response: List[RuleResult] = await get_matching_paras(request=request)
 
     result: List[PlayBookReviewResponse] = []
+
     for res in response:
 
-        # -------------------------------------------------------------------
-        # NOT FOUND short-circuit — only addition to original code.
-        # When paragraphcontext is empty the matcher found nothing relevant.
-        # Return NOT FOUND without calling the LLM at all.
-        # -------------------------------------------------------------------
+        # IMPORTANT: Missing Clause Detection
+
         if not res.paragraphcontext or not res.paragraphcontext.strip():
+
             result.append(
                 PlayBookReviewResponse(
                     rule_title=res.title,
@@ -88,12 +86,13 @@ async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
                     content=PlayBookReviewLLMResponse(
                         para_identifiers=[],
                         status=ResponseStatus.NOT_FOUND,
-                        reason=(f"No clause addressing '{res.title}' was found in the " f"document. The document does not contain any paragraph " f"that covers this topic."),
+                        reason=(f"No paragraph addressing '{res.title}' was found " "in the provided document."),
                         suggestion=f"Add a '{res.title}' clause to the agreement.",
                         suggested_fix="",
                     ),
                 )
             )
+
             continue
 
         context: Dict[str, Any] = {
@@ -108,6 +107,16 @@ async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
             context=context,
             response_model=PlayBookReviewLLMResponse,
         )
+
+        # Extract paragraph identifiers from retrieval
+        para_ids = []
+
+        if res.paragraphidentifier:
+            para_ids = [p.strip() for p in res.paragraphidentifier.split(",")]
+
+        # Force identifiers into LLM response
+        llm_reponse.para_identifiers = para_ids
+
         response_item = PlayBookReviewResponse(
             rule_title=res.title,
             rule_instruction=res.instruction,
