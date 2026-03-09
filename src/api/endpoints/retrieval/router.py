@@ -74,25 +74,27 @@ async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
 
     for res in response:
 
-        # IMPORTANT: Missing Clause Detection
+        # Extract paragraph identifiers from retrieval
+        para_ids = []
+        if res.paragraphidentifier:
+            para_ids = [p.strip() for p in res.paragraphidentifier.split(",")]
 
+        # If no paragraphs retrieved → NOT FOUND without LLM
         if not res.paragraphcontext or not res.paragraphcontext.strip():
-
             result.append(
                 PlayBookReviewResponse(
                     rule_title=res.title,
                     rule_instruction=res.instruction,
                     rule_description=res.description,
                     content=PlayBookReviewLLMResponse(
-                        para_identifiers=[],
+                        para_identifiers=para_ids,
                         status=ResponseStatus.NOT_FOUND,
-                        reason=(f"No paragraph addressing '{res.title}' was found " "in the provided document."),
+                        reason=f"No clause addressing '{res.title}' was found in the document.",
                         suggestion=f"Add a '{res.title}' clause to the agreement.",
                         suggested_fix="",
                     ),
                 )
             )
-
             continue
 
         context: Dict[str, Any] = {
@@ -108,22 +110,17 @@ async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
             response_model=PlayBookReviewLLMResponse,
         )
 
-        # Extract paragraph identifiers from retrieval
-        para_ids = []
-
-        if res.paragraphidentifier:
-            para_ids = [p.strip() for p in res.paragraphidentifier.split(",")]
-
-        # Force identifiers into LLM response
+        # Ensure para_identifiers shows the paragraphs LLM checked
         llm_reponse.para_identifiers = para_ids
 
-        response_item = PlayBookReviewResponse(
-            rule_title=res.title,
-            rule_instruction=res.instruction,
-            rule_description=res.description,
-            content=llm_reponse,
+        result.append(
+            PlayBookReviewResponse(
+                rule_title=res.title,
+                rule_instruction=res.instruction,
+                rule_description=res.description,
+                content=llm_reponse,
+            )
         )
-        result.append(response_item)
 
     return result
 
