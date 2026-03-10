@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
@@ -6,6 +7,7 @@ import numpy as np
 from src.config.logging import get_logger
 from src.dependencies import get_service_container
 from src.schemas.rule_check import (
+    MissingClausesLLMResponse,
     ParaSimilarity,
     RuleCheckRequest,
     RuleResult,
@@ -13,6 +15,28 @@ from src.schemas.rule_check import (
 )
 
 logger = get_logger(__name__)
+
+
+async def get_missing_clauses(data: str) -> List[str]:
+    """Get the missing clauses for the given contract text."""
+
+    service_container = get_service_container()
+    llm_model = service_container.azure_openai_model
+
+    prompt = Path(r"src\services\prompts\v1\missing_clauses.mustache").read_text(encoding="utf-8")
+    context = {"data": data}
+    response = await llm_model.generate(
+        prompt=prompt,
+        context=context,
+        response_model=MissingClausesLLMResponse,
+    )
+
+    # Simple parsing of bullet points from the response
+    missing_clauses = [line.strip("- ").strip() for line in response.splitlines() if line.startswith("-")]
+
+    logger.info(f"Identified {len(missing_clauses)} missing clauses.")
+
+    return missing_clauses
 
 
 async def get_matching_pairs_faiss(request: RuleCheckRequest) -> List[RuleResult]:

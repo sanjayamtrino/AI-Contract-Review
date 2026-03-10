@@ -2,7 +2,7 @@ import logging
 import logging.config
 import os
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 from src.config.settings import get_settings
 
@@ -25,6 +25,20 @@ class ContextualFilter(logging.Filter):
 
 def setup_logging() -> None:
     """Set up application logging configuration."""
+    try:
+        import io
+        import sys
+
+        stdout = cast(io.TextIOWrapper, sys.stdout)
+        stderr = cast(io.TextIOWrapper, sys.stderr)
+
+        stdout.reconfigure(encoding="utf-8", errors="replace")
+        stderr.reconfigure(encoding="utf-8", errors="replace")
+
+    except Exception:
+        # reconfigure is available on Python 3.7+; if it fails just ignore it.
+        pass
+
     settings = get_settings()
 
     # Ensure logs directory exists
@@ -70,6 +84,7 @@ def setup_logging() -> None:
                 "level": "DEBUG",
                 "formatter": "detailed",
                 "filename": log_filename,
+                "encoding": "utf-8",
                 "maxBytes": 10485760,  # 10MB
                 "backupCount": 5,
                 "filters": ["contextual"],
@@ -79,6 +94,7 @@ def setup_logging() -> None:
                 "level": "ERROR",
                 "formatter": "json",
                 "filename": os.path.join(settings.logs_directory, "errors.log"),
+                "encoding": "utf-8",
                 "maxBytes": 10485760,  # 10MB
                 "backupCount": 5,
                 "filters": ["contextual"],

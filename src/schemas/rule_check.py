@@ -47,6 +47,41 @@ class RuleResult(BaseModel):
     similarity_scores: List[float] = []
 
 
+# --------------- Missing Clauses Schema -------------
+
+
+class MissingClauseStatus(str, Enum):
+    """Status of the missing clause."""
+
+    absent = "absent"
+    incomplete = "incomplete"
+    ambiguous = "ambiguous"
+
+
+class MissingClauseImportance(str, Enum):
+    """Importance of the missing clause."""
+
+    low = "low"
+    medium = "medium"
+    high = "high"
+
+
+class MissingClause(BaseModel):
+    clause_name: str = Field(..., description="Name of the missing clause")
+    status: MissingClauseStatus = Field(..., description="Status of the missing clause")
+    importance: MissingClauseImportance = Field(..., description="Importance of the missing clause (Low, Medium, High)")
+    explanation: str = Field(..., description="Explanation of why the clause is missing or incomplete")
+
+
+class MissingClausesLLMResponse(BaseModel):
+    missing_clauses: List[MissingClause] = Field(..., description="List of identified missing clauses")
+    total_missing: int = Field(..., description="Total number of missing clauses identified")
+    summary: str = Field(..., description="Summary of the missing clauses and their implications")
+
+
+# ------------- Playbook Review Schemas -------------
+
+
 class ResponseStatus(str, Enum):
     """Response status for the AI Review."""
 
@@ -86,45 +121,47 @@ class PlayBookReviewResponse(BaseModel):
     rule_title: str = Field(..., description="Title of the rule that was considered.")
     rule_instruction: str = Field(..., description="Rule Instruction that was considered.")
     rule_description: str = Field(..., description="Rule Description that was considered.")
-    # para_identifiers: List[str] = Field(..., description="List of Paragraphs that matched the rule.")
-    # status: ResponseStatus = Field(..., description="Status of the given rules and para (critical, medium, low, good)")
-    # reason: str = Field(..., description="Reason of the Review either good or bad,")
-    # suggestion: str = Field(..., description="A brief suggestion of the paragraphs over the rule.")
-    # suggested_fix: str = Field(..., description="Suggested fix for the given rule and the paragraph.")
     content: PlayBookReviewLLMResponse = Field(..., description="Content of the review for the given rule and paragraphs.")
 
 
-class MatchedParagraph(BaseModel):
-    paragraph_id: str = Field(..., description="Exact ID from input")
-    paragraph_text: str = Field(..., description="Exact text from input")
-    reason: str = Field(..., description="Why this paragraph is relevant — cite specific words")
-    confidence_score: float = Field(..., ge=0.0, le=1.0, description="Confidence in paragraph relevance")
+class PlayBookReviewFinalResponse(BaseModel):
+    """Schema for the final response of the playbook review."""
+
+    rules_review: List[PlayBookReviewResponse] = Field(..., description="List of reviews for each rule.")
+    missing_clauses: Optional[MissingClausesLLMResponse] = Field(None, description="Identified missing clauses in the contract, if any.")
 
 
-class MatchedClause(BaseModel):
-    clause_number: str = Field(..., description="e.g., 1, 1.1, 2.3")
-    clause_title: str = Field(..., description="Descriptive title")
-    clause_text: str = Field(..., description="EXACT verbatim text from the paragraph")
-    reason: str = Field(..., description="Why this clause relates to the rule — cite specific words")
-    risk_level: str = Field(..., description="Risk level: Low | Medium | High | Critical")
-    deviation_from_playbook: str = Field(..., description="Exact deviation or 'None'")
-    suggested_revision: str = Field(..., description="Concrete corrected clause text or 'No revision needed'")
-    confidence_score: float = Field(..., ge=0.0, le=1.0, description="Confidence in clause evaluation")
+# class MatchedParagraph(BaseModel):
+#     paragraph_id: str = Field(..., description="Exact ID from input")
+#     paragraph_text: str = Field(..., description="Exact text from input")
+#     reason: str = Field(..., description="Why this paragraph is relevant — cite specific words")
+#     confidence_score: float = Field(..., ge=0.0, le=1.0, description="Confidence in paragraph relevance")
 
 
-class RuleAnalysis(BaseModel):
-    analysis_reasoning: str = Field(..., description="2-4 sentences reasoning with PASS/FAIL/NOT FOUND")
-    rule_title: str = Field(..., description="Exact rule title from input")
-    matched_paragraphs: List[MatchedParagraph] = Field(default_factory=list)
-    matched_clauses: List[MatchedClause] = Field(default_factory=list)
-    overall_rule_risk: str = Field(..., description="Low | Medium | High | Critical")
-    overall_confidence: float = Field(..., ge=0.0, le=1.0, description="Overall confidence score for this rule")
-    summary: str = Field(..., description="PASS: ... | FAIL: ... | NOT FOUND: ... — concise verdict with key evidence")
+# class MatchedClause(BaseModel):
+#     clause_number: str = Field(..., description="e.g., 1, 1.1, 2.3")
+#     clause_title: str = Field(..., description="Descriptive title")
+#     clause_text: str = Field(..., description="EXACT verbatim text from the paragraph")
+#     reason: str = Field(..., description="Why this clause relates to the rule — cite specific words")
+#     risk_level: str = Field(..., description="Risk level: Low | Medium | High | Critical")
+#     deviation_from_playbook: str = Field(..., description="Exact deviation or 'None'")
+#     suggested_revision: str = Field(..., description="Concrete corrected clause text or 'No revision needed'")
+#     confidence_score: float = Field(..., ge=0.0, le=1.0, description="Confidence in clause evaluation")
 
 
-class PlaybookAnalysisResponse(BaseModel):
-    rules_analysis: List[RuleAnalysis] = Field(..., description="List of rule evaluations, one per rule")
+# class RuleAnalysis(BaseModel):
+#     analysis_reasoning: str = Field(..., description="2-4 sentences reasoning with PASS/FAIL/NOT FOUND")
+#     rule_title: str = Field(..., description="Exact rule title from input")
+#     matched_paragraphs: List[MatchedParagraph] = Field(default_factory=list)
+#     matched_clauses: List[MatchedClause] = Field(default_factory=list)
+#     overall_rule_risk: str = Field(..., description="Low | Medium | High | Critical")
+#     overall_confidence: float = Field(..., ge=0.0, le=1.0, description="Overall confidence score for this rule")
+#     summary: str = Field(..., description="PASS: ... | FAIL: ... | NOT FOUND: ... — concise verdict with key evidence")
 
 
-class ListPlaybookAnalysisResponse(BaseModel):
-    analysis: List[PlaybookAnalysisResponse]
+# class PlaybookAnalysisResponse(BaseModel):
+#     rules_analysis: List[RuleAnalysis] = Field(..., description="List of rule evaluations, one per rule")
+
+
+# class ListPlaybookAnalysisResponse(BaseModel):
+#     analysis: List[PlaybookAnalysisResponse]

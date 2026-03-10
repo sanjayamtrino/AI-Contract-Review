@@ -9,8 +9,10 @@ from src.dependencies import get_service_container
 from src.schemas.llm_response import QueryLLmResponse
 from src.schemas.rule_check import (
     # PlaybookAnalysisResponse,
-    PlayBookReviewLLMResponse,
+    MissingClausesLLMResponse,
     # PlayBookReviewRequest,
+    PlayBookReviewFinalResponse,
+    PlayBookReviewLLMResponse,
     PlayBookReviewResponse,
     RuleCheckRequest,
     RuleResult,
@@ -20,7 +22,7 @@ from src.schemas.rule_check import (
 #     # get_matching_pairs_faiss,
 #     get_matching_paras,
 # )
-from src.tools.playbook_review import get_matching_pairs_faiss, get_matching_paras
+from src.tools.playbook_review import get_matching_paras, get_missing_clauses
 
 router = APIRouter()
 
@@ -73,8 +75,8 @@ async def statistical_reivew(request: RuleCheckRequest) -> List[RuleResult]:
     return response
 
 
-@router.post("/playbook/ai-review", response_model=List[PlayBookReviewResponse])
-async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
+@router.post("/playbook/ai-review", response_model=PlayBookReviewFinalResponse)
+async def llm_review(request: RuleCheckRequest) -> PlayBookReviewFinalResponse:
     """Playbook review endpoint to find similarity between paras and rules and return the LLM response."""
 
     service_container = get_service_container()
@@ -103,7 +105,16 @@ async def llm_review(request: RuleCheckRequest) -> List[PlayBookReviewResponse]:
         )
         result.append(response_item)
 
-    return result
+    # Find the missing clauses for the document
+    data = " ".join([res.paragraphcontext for res in response])
+    missing_clauses: MissingClausesLLMResponse = await get_missing_clauses(data=data)
+
+    final_response = PlayBookReviewFinalResponse(
+        rules_review=result,
+        missing_clauses=missing_clauses,
+    )
+
+    return final_response
 
     # @router.post("/playbook/test-ai")
     # async def review(request: RuleCheckRequest) -> Any:
