@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -7,10 +8,8 @@ from pydantic import BaseModel
 from src.api.session_utils import get_session_id
 from src.dependencies import get_service_container
 from src.schemas.llm_response import QueryLLmResponse
-from src.schemas.rule_check import (
-    # PlaybookAnalysisResponse,
+from src.schemas.rule_check import (  # PlaybookAnalysisResponse,; PlayBookReviewRequest,
     MissingClausesLLMResponse,
-    # PlayBookReviewRequest,
     PlayBookReviewFinalResponse,
     PlayBookReviewLLMResponse,
     PlayBookReviewResponse,
@@ -82,11 +81,16 @@ async def llm_review(request: RuleCheckRequest) -> PlayBookReviewFinalResponse:
     service_container = get_service_container()
     llm_service = service_container.azure_openai_model
 
-    response: List[RuleResult] = await get_matching_paras(request=request)
+    # Run similarity matching and missing clause check concurrently.
+    # get_missing_clauses MUST receive request.textinformation — all paragraphs.
+    # NOT " ".join(res.paragraphcontext) which is only similarity-matched paragraphs.
+    matched_results, missing_clauses = await asyncio.gather(
+        get_matching_paras(request=request),
+        get_missing_clauses(text_items=request.textinformation, rule_titles=[rule.title for rule in request.rulesinformation]),
+    )
 
-    result: List[PlayBookReviewResponse] = []
-    for res in response:
-        # print(res.instruction)
+    rules_review: List[PlayBookReviewResponse] = []
+    for res in matched_results:
         context: Dict[str, Any] = {
             "rule_title": res.title,
             "rule_instruction": res.instruction,
@@ -94,27 +98,25 @@ async def llm_review(request: RuleCheckRequest) -> PlayBookReviewFinalResponse:
             "paragraphs": res.paragraphcontext,
         }
 
-        # print(context)
-
-        llm_reponse: PlayBookReviewLLMResponse = await llm_service.generate(prompt=similarity_prompt_template, context=context, response_model=PlayBookReviewLLMResponse)
-        response_item = PlayBookReviewResponse(
-            rule_title=res.title,
-            rule_instruction=res.instruction,
-            rule_description=res.description,
-            content=llm_reponse,
+        llm_response: PlayBookReviewLLMResponse = await llm_service.generate(
+            prompt=similarity_prompt_template,
+            context=context,
+            response_model=PlayBookReviewLLMResponse,
         )
-        result.append(response_item)
 
-    # Find the missing clauses for the document
-    data = " ".join([res.paragraphcontext for res in response])
-    missing_clauses: MissingClausesLLMResponse = await get_missing_clauses(data=data)
+        rules_review.append(
+            PlayBookReviewResponse(
+                rule_title=res.title,
+                rule_instruction=res.instruction,
+                rule_description=res.description,
+                content=llm_response,
+            )
+        )
 
-    final_response = PlayBookReviewFinalResponse(
-        rules_review=result,
+    return PlayBookReviewFinalResponse(
+        rules_review=rules_review,
         missing_clauses=missing_clauses,
     )
-
-    return final_response
 
     # @router.post("/playbook/test-ai")
     # async def review(request: RuleCheckRequest) -> Any:
