@@ -12,24 +12,20 @@ from src.schemas.rule_check import MissingClausesLLMResponse, ParaSimilarity, Ru
 logger = get_logger(__name__)
 
 
-async def get_missing_clauses(text_items: List[TextInfo], rule_titles: List[str]) -> MissingClausesLLMResponse:
+async def get_missing_clauses(text_items: List[TextInfo]) -> MissingClausesLLMResponse:
     """
-    Detect missing clauses — hybrid approach.
-    Get the missing clauses for the given contract text.
+    Detect missing clauses — LLM driven approach.
+    LLM reads the full contract and identifies any standard clauses that are
+    completely absent, purely from its own legal knowledge of the contract type.
     """
     service_container = get_service_container()
     llm_model = service_container.azure_openai_model
 
-    # Label every paragraph with its ID so LLM returns accurate para_identifiers
-    labeled_paragraphs = "\n\n".join(f"[{item.paraindetifier}] {item.text.strip()}" for item in text_items if item.text.strip())
-
-    # Format playbook titles as numbered list for the prompt
-    playbook_clauses = "\n".join(f"{i+1}. {title}" for i, title in enumerate(rule_titles))
+    contract_text = "\n\n".join(item.text.strip() for item in text_items if item.text.strip())
 
     prompt = Path(r"src\services\prompts\v1\missing_clauses.mustache").read_text(encoding="utf-8")
     context: Dict[str, Any] = {
-        "data": labeled_paragraphs,
-        "playbook_clauses": playbook_clauses,
+        "data": contract_text,
     }
 
     response: MissingClausesLLMResponse = await llm_model.generate(
@@ -37,25 +33,10 @@ async def get_missing_clauses(text_items: List[TextInfo], rule_titles: List[str]
         context=context,
         response_model=MissingClausesLLMResponse,
     )
-    # Extract missing clauses from the structured response
 
-    truly_missing = [c for c in response.missing_clauses if c.is_missing]
-
-    logger.info(f"Missing clause check complete — " f"{len(truly_missing)} missing clauses detected: " f"{[c.clause_name for c in truly_missing] or 'none'}")
-
-    response.missing_clauses = truly_missing
-    response.total_missing = len(truly_missing)
+    logger.info(f"Missing clause check complete — {len(response.missing_clauses)} missing clauses detected: {[c.clause_name for c in response.missing_clauses] or 'none'}")
 
     return response
-
-
-"""
-    truly_missing = [c for c in response.missing_clauses if c.is_missing]
-
-    logger.info(f"Missing clause check complete — " f"{len(truly_missing)} absent out of {len(response.missing_clauses)} clauses: " f"{[c.clause_name for c in truly_missing] or 'none'}")
-
-    return response
-"""
 
 
 async def get_matching_pairs_faiss(request: RuleCheckRequest) -> List[RuleResult]:

@@ -50,15 +50,6 @@ class RuleResult(BaseModel):
 # --------------- Missing Clauses Schema -------------
 
 
-class MissingClauseStatus(str, Enum):
-    """Status of the missing clause."""
-
-    absent = "absent"
-    incomplete = "incomplete"
-    ambiguous = "ambiguous"
-    complete = "complete"  # LLM uses this when clause is fully present
-
-
 class MissingClauseImportance(str, Enum):
     """Importance of the missing clause."""
 
@@ -67,27 +58,25 @@ class MissingClauseImportance(str, Enum):
     high = "high"
 
 
-class MissingClauseSource(str, Enum):
-    """Whether the clause came from the playbook or was discovered by the LLM."""
+class MissingClauseStatus(str, Enum):
+    """Status of the missing clause."""
 
-    playbook = "playbook"
-    additional = "additional"
+    absent = "absent"
+    incomplete = "incomplete"
+    ambiguous = "ambiguous"
 
 
 class MissingClause(BaseModel):
-    clause_name: str = Field(..., description="Name of the clause being checked")
-    is_missing: bool = Field(..., description="True if clause is completely absent from the document")
-    para_identifiers: List[str] = Field(default_factory=list, description="Paragraph IDs where clause was found. Empty if is_missing=True.")
-    status: MissingClauseStatus = Field(..., description="Status of the clause: absent | incomplete | ambiguous | complete")
-    importance: MissingClauseImportance = Field(..., description="Importance of the clause: low | medium | high")
-    explanation: str = Field(..., description="Explanation of why the clause is missing, incomplete, or found")
-    source: MissingClauseSource = Field(..., description="playbook = from client playbook titles | additional = extra clause LLM found missing")
+    clause_name: str = Field(..., description="Name of the missing clause")
+    status: MissingClauseStatus = Field(..., description="absent | incomplete | ambiguous")
+    importance: MissingClauseImportance = Field(..., description="high | medium | low")
+    explanation: str = Field(..., description="Why this clause is missing and what risk it creates")
 
 
 class MissingClausesLLMResponse(BaseModel):
-    missing_clauses: List[MissingClause] = Field(..., description="List of standard clauses expected for the detected contract type, with detection result for each")
-    total_missing: int = Field(..., description="Total number of clauses completely absent from the document")
-    summary: str = Field(..., description="Summary of the missing clauses and their implications")
+    missing_clauses: List[MissingClause] = Field(..., description="List of clauses completely absent from the contract")
+    total_missing: int = Field(..., description="Total number of absent clauses")
+    summary: str = Field(..., description="Brief summary of missing clauses and their implications")
 
 
 # ------------- Playbook Review Schemas -------------

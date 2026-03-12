@@ -76,7 +76,7 @@ async def statistical_reivew(request: RuleCheckRequest) -> List[RuleResult]:
 
 @router.post("/playbook/ai-review", response_model=PlayBookReviewFinalResponse)
 async def llm_review(request: RuleCheckRequest) -> PlayBookReviewFinalResponse:
-    """Playbook review endpoint to find similarity between paras and rules and return the LLM response."""
+    """Playbook review — similarity matching + quality evaluation + missing clause detection."""
 
     service_container = get_service_container()
     llm_service = service_container.azure_openai_model
@@ -86,9 +86,10 @@ async def llm_review(request: RuleCheckRequest) -> PlayBookReviewFinalResponse:
     # NOT " ".join(res.paragraphcontext) which is only similarity-matched paragraphs.
     matched_results, missing_clauses = await asyncio.gather(
         get_matching_paras(request=request),
-        get_missing_clauses(text_items=request.textinformation, rule_titles=[rule.title for rule in request.rulesinformation]),
+        get_missing_clauses(text_items=request.textinformation),
     )
 
+    # Quality evaluation per rule.
     rules_review: List[PlayBookReviewResponse] = []
     for res in matched_results:
         context: Dict[str, Any] = {

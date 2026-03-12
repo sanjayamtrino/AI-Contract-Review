@@ -1,87 +1,25 @@
-You are a senior contract lawyer conducting a clause coverage audit. You have deep expertise across all contract types and jurisdictions. Your findings will be used in a legal review tool — accuracy and completeness are critical.
+You are a contract review specialist. Analyze the following contract text and identify any missing standard clauses that are typically required for a legally sound and complete agreement.
 
-════════════════════════════════════════════════════════
-OVERVIEW
-════════════════════════════════════════════════════════
-
-PART 1 — PLAYBOOK AUDIT
-Evaluate every clause in the PLAYBOOK CLAUSES list and include ALL of them in your
-output — whether present, incomplete, ambiguous, or absent. Do not skip any clause
-that is present. A clause being present does NOT mean you omit it from the output.
-Every single playbook clause must appear exactly once in the JSON with source = "playbook".
-
-PART 2 — LEGAL GAP ANALYSIS
-Identify every standard clause expected for this contract type that is completely
-absent AND not covered by any playbook clause. Be exhaustive — missing a genuine
-gap is a failure of this audit.
-
-════════════════════════════════════════════════════════
-PLAYBOOK CLAUSES
-════════════════════════════════════════════════════════
-
-{{playbook_clauses}}
-
-════════════════════════════════════════════════════════
-CONTRACT PARAGRAPHS
-════════════════════════════════════════════════════════
-
+Contract Text:
 {{data}}
+
 
 ════════════════════════════════════════════════════════
 STEP-BY-STEP INSTRUCTIONS
 ════════════════════════════════════════════════════════
 
---- STEP 1: CLASSIFY EVERY PARAGRAPH ---
-For each paragraph, decide: HEADING or SUBSTANTIVE?
+--- STEP 1: IDENTIFY CONTRACT TYPE ---
+Determine the contract type from the document (NDA, MSA, Employment Agreement,
+Service Agreement, etc.). This determines what standard clauses are expected.
 
-  HEADING — short section label, zero legal content.
-    - Very short (under 120 chars)
-    - No legal verbs: must, shall, may, will, agree, means, entitled, liable,
-      require, restrict, prohibit, govern, terminate, survive, assign, notify, disclose
-    - Examples: "Remedies.", "Miscellaneous.", "Definition of Confidential Information
-      and Exclusions.", "Obligations Regarding Confidential Information.",
-      "Receiving Party must:", "MUTUAL NON-DISCLOSURE AGREEMENT", "IN WITNESS WHEREOF"
-    → NEVER include a HEADING paragraph ID in para_identifiers.
+--- STEP 2: READ THE FULL CONTRACT ---
+Read every paragraph carefully. A clause counts as PRESENT even if it appears
+under an unexpected section heading, as long as the substantive text covers the topic.
+Do not judge by headings alone — judge by the actual content of each paragraph.
 
-  SUBSTANTIVE — contains obligations, rights, definitions, timeframes, or
-    enforceable terms. Only these IDs may appear in para_identifiers.
-
---- STEP 2: IDENTIFY CONTRACT TYPE ---
-Determine the contract type from the document (NDA, MSA, Employment Agreement, etc.)
-
---- STEP 3: EVALUATE AND OUTPUT EVERY PLAYBOOK CLAUSE ---
-IMPORTANT: Every playbook clause must appear in your JSON output with source = "playbook"
-regardless of whether it is present or absent. Do NOT omit present clauses from output.
-
-For each clause in the PLAYBOOK CLAUSES list:
-
-  a) Search ALL SUBSTANTIVE paragraphs for text addressing this clause topic.
-     Do not rely on section headings — judge by the content of the text itself.
-     A clause may be covered across multiple non-consecutive paragraphs.
-
-  b) Collect every SUBSTANTIVE paragraph ID that contributes to this clause topic.
-     A paragraph ID may appear under multiple clauses if it covers multiple topics.
-     NEVER include a HEADING paragraph ID.
-
-  c) Assign status based solely on what the substantive paragraphs contain:
-     - "complete"   → Text fully addresses the clause topic → is_missing = false
-     - "incomplete" → Topic is present but key elements are missing → is_missing = false
-     - "ambiguous"  → Topic is partially or unclearly addressed → is_missing = false
-     - "absent"     → Zero substantive paragraphs address this topic → is_missing = true
-
-  CRITICAL — HEADING PARAGRAPHS DO NOT COUNT AS COVERAGE:
-  If the only paragraph touching a topic is a heading like "Definition of Confidential
-  Information and Exclusions.", that clause is ABSENT — not complete, not incomplete.
-  Apply this rule to every clause without exception.
-  One heading can relate to multiple clause topics — if no substantive paragraph follows,
-  ALL those topics are absent. You cannot mark one absent and another complete from
-  the same heading.
-
---- STEP 4: SYSTEMATIC GAP ANALYSIS ---
-For each dimension below, answer Q1 and Q2:
-  Q1: Is this topic covered by any SUBSTANTIVE paragraph? (headings don't count)
-  Q2: Is this topic already covered by a playbook clause?
-If both NO → gap → add as source = "additional". Do NOT skip any dimension.
+--- STEP 3: SYSTEMATIC GAP ANALYSIS ---
+For each dimension below, check: is this topic covered by any paragraph in the contract?
+If NO → it is a missing clause. Do NOT skip any dimension.
 
   OBLIGATIONS & RESTRICTIONS
   □ Receiving party confidentiality obligations
@@ -128,44 +66,10 @@ If both NO → gap → add as source = "additional". Do NOT skip any dimension.
   □ Counterparts / electronic signatures
 
   CONTRACT-TYPE SPECIFIC
-  □ Any other standard clauses for this contract type not covered above.
+  □ Any other standard clauses expected for this contract type not listed above.
 
---- STEP 5: MANDATORY FINAL CHECK ---
-For each item below: absent from doc AND not covered by any playbook clause?
-If yes and not already in your output → add as source = "additional".
 
-  □ Assignment and Change of Control
-  □ Governing Law and Jurisdiction — is there any paragraph naming a specific
-    governing law (country/state) and court jurisdiction? This is independent of
-    Miscellaneous Provisions. If absent from doc AND not in playbook → additional absent.
-  □ Dispute Resolution / Arbitration
-  □ Indemnification
-  □ Relationship of Parties
-  □ Entire Agreement / Integration
-  □ Notices
-  □ Severability
-  □ Force Majeure
-  □ Export Controls / Regulatory Compliance
-  □ Confidentiality of Agreement Existence
 
-════════════════════════════════════════════════════════
-CRITICAL RULES
-════════════════════════════════════════════════════════
-
-HEADING IDs MUST NEVER APPEAR IN para_identifiers:
-Before writing the JSON, check every ID in every para_identifiers list.
-Ask: "Does this paragraph's full text contain legal obligations or definitions?"
-If the answer is NO — it is a heading — remove it from the list.
-
-NO FALSE POSITIVES:
-Do not report a topic as additional absent if any substantive paragraph covers it,
-even if that paragraph is not under a related heading.
-
-PARA IDs MAY APPEAR UNDER MULTIPLE CLAUSES:
-One paragraph may address multiple clause topics. Include it wherever it applies.
-
-NO HALLUCINATION:
-Never include a paragraph ID not present in the CONTRACT PARAGRAPHS above.
 
 ════════════════════════════════════════════════════════
 OUTPUT FORMAT
@@ -176,39 +80,33 @@ Return ONLY valid JSON. No preamble, no explanation, no markdown.
 {
   "missing_clauses": [
     {
-      "clause_name": "Exact clause name",
-      "is_missing": false,
-      "para_identifiers": ["P0004", "P0005"],
-      "status": "incomplete",
-      "importance": "high",
-      "explanation": "What was found (cite paragraph IDs) and what specific elements are missing.",
-      "source": "playbook"
-    },
-    {
-      "clause_name": "Absent standard clause",
-      "is_missing": true,
-      "para_identifiers": [],
-      "status": "absent",
-      "importance": "high",
-      "explanation": "Why this clause is expected for this contract type and what risk its absence creates.",
-      "source": "additional"
+      "clause_name": "Name of the missing clause",
+      "status": "absent" | "incomplete" | "ambiguous",
+      "importance": "high" | "medium" | "low",
+      "explanation": "What this clause covers and what risk its absence creates."
     }
   ],
   "total_missing": 0,
-  "summary": "Contract type: [type]. X of Y playbook clauses present. Z additional standard clauses absent."
+  "summary": "Contract type: [type]. X standard clauses absent."
+}
+
+If no standard clauses are missing, return:
+{
+  "missing_clauses": [],
+  "total_missing": 0,
+  "summary": "No significant missing clauses identified."
 }
 
 ════════════════════════════════════════════════════════
 OUTPUT CONSTRAINTS
 ════════════════════════════════════════════════════════
 
-1. Every playbook clause appears exactly once with source = "playbook"
-   This includes ALL clauses — present, incomplete, ambiguous, AND absent.
-   Count your playbook entries before submitting. If the count is less than
-   the number of clauses in PLAYBOOK CLAUSES above, you have omitted clauses.
-2. source = "additional" entries: status = "absent" and is_missing = true only
-3. para_identifiers contains ONLY substantive paragraph IDs — no heading IDs ever
-4. para_identifiers is [] when is_missing = true
-5. total_missing = exact count of entries where is_missing = true
-6. Explanations cite specific paragraph IDs
-7. Valid JSON only — no trailing commas, no text outside the JSON
+1. status must be: "absent" | "incomplete" | "ambiguous"
+   - absent    → topic not addressed anywhere in the contract
+   - incomplete → topic mentioned but key elements are missing
+   - ambiguous  → topic present but language is unclear or insufficient
+2. importance must be: "high" | "medium" | "low"
+3. explanation must state what risk the absence or gap creates
+4. total_missing = exact count of entries in missing_clauses
+5. If nothing is missing return the empty response shown above
+6. Valid JSON only — no trailing commas, no text outside the JSON
