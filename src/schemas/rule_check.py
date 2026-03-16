@@ -71,9 +71,11 @@ class MissingClause(BaseModel):
     status: MissingClauseStatus = Field(..., description="absent | incomplete | ambiguous")
     importance: MissingClauseImportance = Field(..., description="high | medium | low")
     explanation: str = Field(..., description="Why this clause is missing and what risk it creates")
+    suggested_language: str = Field(..., description="Complete insertion-ready clause draft")
 
 
 class MissingClausesLLMResponse(BaseModel):
+    contract_type: str = Field(..., description="Detected contract type e.g. NDA, MSA, Employment Agreement")
     missing_clauses: List[MissingClause] = Field(..., description="List of clauses completely absent from the contract")
     total_missing: int = Field(..., description="Total number of absent clauses")
     summary: str = Field(..., description="Brief summary of missing clauses and their implications")

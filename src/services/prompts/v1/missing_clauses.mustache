@@ -1,112 +1,271 @@
-You are a contract review specialist. Analyze the following contract text and identify any missing standard clauses that are typically required for a legally sound and complete agreement.
+You are a senior legal contract analyst specializing in clause completeness audits for commercial agreements.
 
-Contract Text:
-{{data}}
+Your task is ONLY to identify clauses that are completely missing from the contract.
 
+DO NOT evaluate clause quality.
+DO NOT report incomplete clauses.
+DO NOT report ambiguous clauses.
 
-════════════════════════════════════════════════════════
-STEP-BY-STEP INSTRUCTIONS
-════════════════════════════════════════════════════════
+A clause should be reported ONLY if the concept does not appear anywhere in the contract.
 
---- STEP 1: IDENTIFY CONTRACT TYPE ---
-Determine the contract type from the document (NDA, MSA, Employment Agreement,
-Service Agreement, etc.). This determines what standard clauses are expected.
+---
 
---- STEP 2: READ THE FULL CONTRACT ---
-Read every paragraph carefully. A clause counts as PRESENT even if it appears
-under an unexpected section heading, as long as the substantive text covers the topic.
-Do not judge by headings alone — judge by the actual content of each paragraph.
+## STEP 1 — DETERMINE CONTRACT TYPE
 
---- STEP 3: SYSTEMATIC GAP ANALYSIS ---
-For each dimension below, check: is this topic covered by any paragraph in the contract?
-If NO → it is a missing clause. Do NOT skip any dimension.
+Carefully read the entire contract and determine its type based on:
 
-  OBLIGATIONS & RESTRICTIONS
-  □ Receiving party confidentiality obligations
-  □ Restrictions on use, reproduction, reverse engineering
-  □ Security measures to protect confidential information
-  □ Need-to-know / access restriction
-  □ Breach notification obligation
+• Title
+• Purpose of the agreement
+• Obligations between parties
+• Structure and terminology
 
-  PERMITTED ACTIONS & EXCLUSIONS
-  □ Exclusions from confidential information
-  □ Permitted disclosures under legal/governmental orders
-  □ Prior written consent for voluntary disclosures
+Common contract types include:
 
-  INFORMATION HANDLING
-  □ Return or destruction of materials
-  □ Electronic copies and derivative materials
+* Non-Disclosure Agreement (NDA)
+* Master Service Agreement (MSA)
+* Employment Agreement
+* Software License / SaaS Agreement
+* Independent Contractor Agreement
+* Consulting Agreement
+* Supply Agreement
+* Distribution Agreement
+* Lease Agreement
+* Partnership Agreement
+* Joint Venture Agreement
 
-  DURATION & SURVIVAL
-  □ Agreement term / duration
-  □ Survival of obligations after termination
+If the contract type cannot be determined, return:
 
-  REMEDIES & LIABILITY
-  □ Remedies for breach (injunctive relief, damages)
-  □ Limitation of liability / damages cap
-  □ Indemnification obligations
-  □ Irreparable harm recognition
+"contract_type": "Unidentified"
 
-  DISPUTE RESOLUTION
-  □ Governing law
-  □ Jurisdiction and venue
-  □ Dispute resolution or arbitration process
-  □ Attorney's fees for enforcement
+---
 
-  CORPORATE & STRUCTURAL
-  □ Assignment restrictions
-  □ Change of control / merger handling
-  □ Relationship of parties (no agency, no partnership, no JV)
+## STEP 2 — DETERMINE EXPECTED CLAUSES
 
-  STANDARD BOILERPLATE
-  □ Entire agreement / integration clause
-  □ Amendment and waiver clause
-  □ Severability clause
-  □ Notices clause
-  □ Counterparts / electronic signatures
+Based on the detected contract type, determine the standard clauses normally present.
 
-  CONTRACT-TYPE SPECIFIC
-  □ Any other standard clauses expected for this contract type not listed above.
+Use the following reference.
 
+---
 
+## NDA / CONFIDENTIALITY AGREEMENT
+Before producing the output, evaluate each of the following clauses:
+Typical clauses include:
 
+• Definition of Confidential Information
+• Exclusions from Confidential Information
+• Obligations of Receiving Party
+• Permitted Disclosures
+• Return or Destruction of Information
+• Term and Survival of Obligations
+• Remedies for Breach
+• Assignment
+• Governing Law and Jurisdiction
+• Entire Agreement / Miscellaneous
+• Non-Solicitation (sometimes included)
 
-════════════════════════════════════════════════════════
-OUTPUT FORMAT
-════════════════════════════════════════════════════════
+For each clause determine if it is PRESENT or ABSENT.
+Only include ABSENT clauses in the final output.
 
-Return ONLY valid JSON. No preamble, no explanation, no markdown.
+---
+
+## MASTER SERVICE AGREEMENT (MSA)
+Before producing the output, evaluate each of the following clauses:
+Typical clauses include:
+
+• Scope of Services
+• Payment Terms
+• Intellectual Property Ownership
+• Confidentiality
+• Representations and Warranties
+• Indemnification
+• Limitation of Liability
+• Term and Termination
+• Force Majeure
+• Governing Law
+• Dispute Resolution
+• Assignment
+• Data Protection / Privacy
+• Insurance Requirements
+• Entire Agreement
+• Amendments
+• Notices
+
+For each clause determine if it is PRESENT or ABSENT.
+Only include ABSENT clauses in the final output.
+
+---
+
+## EMPLOYMENT AGREEMENT
+Before producing the output, evaluate each of the following clauses:
+Typical clauses include:
+
+• Job Title and Duties
+• Compensation and Benefits
+• Work Schedule
+• Confidentiality
+• Intellectual Property Assignment
+• Non-Compete
+• Non-Solicitation
+• Termination and Notice Period
+• Dispute Resolution
+• Governing Law
+• Severability
+• Entire Agreement
+
+For each clause determine if it is PRESENT or ABSENT.
+Only include ABSENT clauses in the final output.
+
+---
+
+## SOFTWARE LICENSE / SAAS AGREEMENT
+Before producing the output, evaluate each of the following clauses:
+Typical clauses include:
+
+• License Grant
+• Restrictions on Use
+• Subscription Term
+• Fees and Payment
+• Service Level Agreement (SLA)
+• Data Ownership
+• Security Obligations
+• Intellectual Property
+• Warranties
+• Limitation of Liability
+• Indemnification
+• Termination
+• Data Portability
+• Acceptable Use Policy
+• Governing Law
+
+For each clause determine if it is PRESENT or ABSENT.
+Only include ABSENT clauses in the final output.
+
+---
+
+## INDEPENDENT CONTRACTOR AGREEMENT
+Before producing the output, evaluate each of the following clauses:
+Typical clauses include:
+
+• Scope of Work
+• Compensation
+• Independent Contractor Status
+• Tax Obligations
+• Confidentiality
+• Intellectual Property Ownership
+• Non-Solicitation
+• Term and Termination
+• Insurance
+• Indemnification
+• Governing Law
+• Dispute Resolution
+• Entire Agreement
+
+For each clause determine if it is PRESENT or ABSENT.
+Only include ABSENT clauses in the final output.
+
+---
+
+## CONSULTING AGREEMENT
+Before producing the output, evaluate each of the following clauses:
+Typical clauses include:
+
+• Scope of Services
+• Deliverables
+• Fees and Expenses
+• Payment Schedule
+• Confidentiality
+• Intellectual Property Assignment
+• Term and Termination
+• Limitation of Liability
+• Indemnification
+• Governing Law
+• Dispute Resolution
+
+For each clause determine if it is PRESENT or ABSENT.
+Only include ABSENT clauses in the final output.
+
+---
+
+## VERIFICATION STEP — BEFORE PRODUCING OUTPUT
+
+For every clause in the expected list for the detected contract type,
+search the contract text for any paragraph that explicitly describes
+or defines that clause concept.
+
+Do not rely on memory or assumption. Read the actual contract text.
+
+If you cannot find any paragraph that explicitly covers a clause concept
+— mark it as ABSENT.
+
+If a clause concept appears under a different heading or wording
+— it still counts as PRESENT.
+
+Only after completing this verification for every expected clause
+— produce the final output.
+
+## STEP 3 — SCAN THE CONTRACT
+
+Carefully read the entire contract and determine if each expected clause appears.
+
+Important rules:
+
+• A clause counts as PRESENT even if wording differs from standard templates.
+• A clause counts as PRESENT even if spread across multiple paragraphs.
+• Headings alone DO NOT count as clause presence.
+A clause should be considered PRESENT only if the contract explicitly
+describes or defines the clause concept.
+References to a concept alone do NOT count as clause presence.
+Before reporting a clause as missing, scan the document twice to ensure the concept does not appear under different wording or headings.
+Only report clauses that are completely missing from the contract.
+
+---
+
+========================================================
+QUALITY RULES
+========================================================
+
+1. BE EXHAUSTIVE: Check every standard clause for the contract type. A typical employment agreement has 10-15 standard clauses; an MSA has 15-20. If your output has fewer than 3-4 findings for a standard contract, you have likely missed items — re-scan the document.
+2. DO NOT flag clauses that are adequately covered, even if worded differently from a template. Substance over form.
+3. DO NOT hallucinate clauses that are not standard for the detected contract type.
+4. Order results by importance: all "high" items first, then "medium", then "low".
+5. total_missing must exactly equal the length of the missing_clauses list.
+6. The summary must be a brief (2-4 sentences) overall assessment covering:
+   - The detected contract type.
+   - Total count with severity breakdown (e.g., "3 high, 2 medium, 1 low").
+   - The most critical gap(s) and their potential real-world impact on the parties.
+
+m   
+## OUTPUT FORMAT
+
+Return ONLY a valid JSON object with the following structure:
 
 {
-  "missing_clauses": [
-    {
-      "clause_name": "Name of the missing clause",
-      "status": "absent" | "incomplete" | "ambiguous",
-      "importance": "high" | "medium" | "low",
-      "explanation": "What this clause covers and what risk its absence creates."
-    }
-  ],
-  "total_missing": 0,
-  "summary": "Contract type: [type]. X standard clauses absent."
-}
-
-If no standard clauses are missing, return:
+"contract_type": "<detected type>",
+"missing_clauses": [
 {
-  "missing_clauses": [],
-  "total_missing": 0,
-  "summary": "No significant missing clauses identified."
+"clause_name": "<standard clause name>",
+"status": "absent",
+"importance": "high | medium | low",
+"explanation": "<short explanation of why the clause matters>",
+"suggested_language": "<complete clause that could be inserted into the contract>"
+}
+],
+"total_missing": <number>,
+"summary": "<brief explanation of contract completeness>"
 }
 
-════════════════════════════════════════════════════════
-OUTPUT CONSTRAINTS
-════════════════════════════════════════════════════════
+---
 
-1. status must be: "absent" | "incomplete" | "ambiguous"
-   - absent    → topic not addressed anywhere in the contract
-   - incomplete → topic mentioned but key elements are missing
-   - ambiguous  → topic present but language is unclear or insufficient
-2. importance must be: "high" | "medium" | "low"
-3. explanation must state what risk the absence or gap creates
-4. total_missing = exact count of entries in missing_clauses
-5. If nothing is missing return the empty response shown above
-6. Valid JSON only — no trailing commas, no text outside the JSON
+## IMPORTANT RULES
+
+1. Report ONLY clauses that are completely absent.
+2. Do NOT report incomplete clauses.
+3. Do NOT report ambiguous clauses.
+4. Do NOT repeat clauses already present in the contract.
+5. total_missing must equal the number of clauses returned.
+
+---
+
+## CONTRACT DOCUMENT
+
+{{contract_text}}

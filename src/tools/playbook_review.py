@@ -18,14 +18,20 @@ async def get_missing_clauses(text_items: List[TextInfo]) -> MissingClausesLLMRe
     LLM reads the full contract and identifies any standard clauses that are
     completely absent, purely from its own legal knowledge of the contract type.
     """
+
     service_container = get_service_container()
     llm_model = service_container.azure_openai_model
 
-    contract_text = "\n\n".join(item.text.strip() for item in text_items if item.text.strip())
+    # label paragraphs to improve LLM reasoning
+    contract_text = "\n\n".join(f"[{item.paraindetifier}] {item.text.strip()}" for item in text_items if item.text.strip())
+
+    logger.info(f"Paragraph count: {len(text_items)}")
+    logger.info(f"Contract text length: {len(contract_text)} chars")
 
     prompt = Path(r"src\services\prompts\v1\missing_clauses.mustache").read_text(encoding="utf-8")
+
     context: Dict[str, Any] = {
-        "data": contract_text,
+        "contract_text": contract_text,
     }
 
     response: MissingClausesLLMResponse = await llm_model.generate(
@@ -33,6 +39,9 @@ async def get_missing_clauses(text_items: List[TextInfo]) -> MissingClausesLLMRe
         context=context,
         response_model=MissingClausesLLMResponse,
     )
+
+    if response.total_missing != len(response.missing_clauses):
+        logger.warning("Mismatch between total_missing and returned clauses.")
 
     logger.info(f"Missing clause check complete — {len(response.missing_clauses)} missing clauses detected: {[c.clause_name for c in response.missing_clauses] or 'none'}")
 
