@@ -1,6 +1,6 @@
 import time
 from io import BytesIO
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Union
 
 from docx import Document
 
@@ -10,6 +10,7 @@ from src.exceptions.ingestion_exceptions import ParserNotFound
 from src.schemas.registry import ParseResult
 from src.services.registry.base_parser import BaseParser
 from src.services.registry.registry import ParserRegistry
+from src.services.session_manager import SessionData
 from src.services.vector_store.embeddings.base_embedding_service import (
     BaseEmbeddingService,
 )
@@ -34,7 +35,7 @@ class IngestionService(Logger):
         service_container = get_service_container()
         self.embedding_service: BaseEmbeddingService = service_container.embedding_service
 
-    async def _parse_data(self, data: Union[BytesIO, Dict[str, Any]], session_data: Optional[Any] = None) -> ParseResult:
+    async def _parse_data(self, data: Union[BytesIO, Dict[str, Any]], session_data: SessionData = None) -> ParseResult:
         """Parse data using the registry services."""
 
         parser: Union[BaseParser, None] = self.registry.get_parser()

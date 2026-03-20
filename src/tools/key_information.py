@@ -14,9 +14,9 @@ _llm = AzureOpenAIModel()
 async def get_key_information(session_id: Optional[str] = None, response_format: str = "JSON") -> str | BaseModel:
     """Extract structured key contract details from the currently ingested document."""
 
-    # Prefer session-specific chunks if session_id is provided
+    container = get_service_container()
+    session = None
     if session_id:
-        container = get_service_container()
         try:
             session = container.session_manager.get_session(session_id)
         except Exception:
@@ -25,6 +25,12 @@ async def get_key_information(session_id: Optional[str] = None, response_format:
         if not session:
             raise ValueError(f"Session '{session_id}' not found or expired")
 
+    # Check if key information already exists in session
+    if session and "key_information" in session.tool_results:
+        return session.tool_results["key_information"]
+
+    # Prefer session-specific chunks if session_id is provided
+    if session:
         results = session.chunk_store
     else:
         results = get_all_chunks()
@@ -42,5 +48,9 @@ async def get_key_information(session_id: Optional[str] = None, response_format:
         response_model=None,
         mode="markdown",
     )
+
+    # Store the result in session if session exists
+    if session:
+        session.tool_results["key_information"] = response
 
     return response

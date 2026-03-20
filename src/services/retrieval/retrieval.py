@@ -60,7 +60,7 @@ class RetrievalService(Logger):
 
             # If dynamic_k is enabled, we fetch more initial candidates to filter down
             # If standard top_k is small, we want enough candidates to find the drop-off
-            initial_k = max(20, top_k * 3) if dynamic_k else top_k
+            initial_k = max(10, top_k * 2) if dynamic_k else top_k
 
             for query_rewriten in queries:
                 new_query = query + " | " + query_rewriten

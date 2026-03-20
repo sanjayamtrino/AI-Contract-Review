@@ -50,6 +50,33 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
 
         return pystache.render(template=prompt, context=context)
 
+    async def stream(self, prompt: str, context: Dict[str, Any]) -> Any:
+        """Stream response generation function."""
+
+        if self.deployment_name is None:
+            raise ValueError("Deployment name is not configured.")
+
+        prompt = self.render_prompt_template(prompt=prompt, context=context)
+        self.logger.info(f"Updated prompt for passing to the LLM: {prompt}")
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.deployment_name,
+                messages=[
+                    {"role": "system", "content": "Extract the information and return valid JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                stream=True,
+            )
+
+            for event in response:
+                yield event.choices[0].delta.content
+
+        except Exception as e:
+            self.logger.error(f"An error occurred while streaming response from the LLM model: {str(e)}")
+            raise LLMModelError("An error occurred while streaming response from the LLM model.") from e
+
     async def generate(self, prompt: str, context: Dict[str, Any], response_model: Union[Type, None], mode: str = "JSON") -> Any:
         """Main function to generate response."""
 
@@ -66,7 +93,7 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
                 response = self.client.chat.completions.create(
                     model=self.deployment_name,
                     messages=[
-                        {"role": "system", "content": "Extract the information and return valid JSON."},
+                        {"role": "system", "content": f"Extract the information and return valid {mode} format."},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.2,

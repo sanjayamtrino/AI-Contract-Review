@@ -25,6 +25,8 @@ class SessionData:
     metadata: Dict[str, Any] = field(default_factory=dict)
     # documents keyed by document_id containing metadata and chunk indices
     documents: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # Store tool results to avoid regenerating them
+    tool_results: Dict[str, Any] = field(default_factory=dict)
 
     def refresh_access(self) -> None:
         """Update the last access timestamp."""
