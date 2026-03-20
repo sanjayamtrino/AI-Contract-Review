@@ -131,6 +131,36 @@ class PlayBookReviewFinalResponse(BaseModel):
     missing_clauses: Optional[MissingClausesLLMResponse] = Field(None, description="Identified missing clauses in the contract, if any.")
 
 
+# ------------- Document Comparison Schemas -------------
+
+
+class DocumentComparisonRequest(BaseModel):
+    """Request body for document comparison — two textinformation lists."""
+
+    previous_document: List[TextInfo] = Field(..., description="Paragraphs of the previous contract version")
+    current_document: List[TextInfo] = Field(..., description="Paragraphs of the current contract version")
+
+
+class ContractChange(BaseModel):
+    """A single change detected between two contract versions."""
+
+    clause_title: str = Field(..., description="Clause name e.g. Termination, Confidentiality Duration")
+    change_type: str = Field(..., description="added | removed | modified")
+    original_text: Optional[str] = Field(None, description="Verbatim text from Document A. Null if added.")
+    revised_text: Optional[str] = Field(None, description="Verbatim text from Document B. Null if removed.")
+    change_summary: str = Field(..., description="What changed, legal impact, and which party it favors")
+    risk_impact: str = Field(..., description="increased | decreased | neutral")
+    significance: str = Field(..., description="high | medium | low")
+
+
+class DocumentComparisonResponse(BaseModel):
+    """Full comparison result between two contract versions."""
+
+    changes: List[ContractChange] = Field(..., description="All changes found, ordered high to low significance")
+    executive_summary: str = Field(..., description="3-5 sentence summary of total changes, most impactful, and overall risk direction")
+    overall_risk_impact: str = Field(..., description="Net effect of all changes: increased | decreased | neutral")
+
+
 # class MatchedParagraph(BaseModel):
 #     paragraph_id: str = Field(..., description="Exact ID from input")
 #     paragraph_text: str = Field(..., description="Exact text from input")

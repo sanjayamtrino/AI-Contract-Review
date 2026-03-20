@@ -1,27 +1,28 @@
 from pathlib import Path
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel
 
 from src.api.session_utils import get_session_id
 from src.dependencies import get_service_container
 from src.schemas.llm_response import QueryLLmResponse
-from src.schemas.rule_check import (
-    # PlaybookAnalysisResponse,
+from src.schemas.rule_check import (  # PlaybookAnalysisResponse,; PlayBookReviewRequest,
+    DocumentComparisonResponse,
     MissingClausesLLMResponse,
-    # PlayBookReviewRequest,
     PlayBookReviewFinalResponse,
     PlayBookReviewLLMResponse,
     PlayBookReviewResponse,
     RuleCheckRequest,
     RuleResult,
+    TextInfo,
 )
 
 # from src.services.retrieval.rules_batching import (
 #     # get_matching_pairs_faiss,
 #     get_matching_paras,
 # )
+from src.tools.document_comparison import compare_documents
 from src.tools.playbook_review import get_matching_paras, get_missing_clauses
 
 router = APIRouter()
@@ -161,6 +162,21 @@ async def llm_review(request: RuleCheckRequest) -> PlayBookReviewFinalResponse:
 #     llm_result = await llm_service.generate(prompt=similarity_prompt_template, context=context, response_model=PlayBookReviewResponse)
 
 #     return llm_result
+
+
+@router.post("/playbook/compare", response_model=DocumentComparisonResponse)
+async def compare_document_versions(
+    previous_document: List[TextInfo] = Body(..., description="Paragraphs of the previous contract version"),
+    current_document: List[TextInfo] = Body(..., description="Paragraphs of the current contract version"),
+) -> DocumentComparisonResponse:
+    """Compare two contract versions. Pass previous_document and current_document as separate JSON body fields."""
+
+    result: DocumentComparisonResponse = await compare_documents(
+        previous_document=previous_document,
+        current_document=current_document,
+    )
+
+    return result
 
 
 class GeneralReviewResponse(BaseModel):
