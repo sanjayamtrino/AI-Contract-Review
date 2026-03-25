@@ -42,12 +42,25 @@ class ClauseChange(BaseModel):
 #     changes: List[ClauseChange] = Field(..., description="List of specific changes identified in the document comparison")
 
 
+class MissingClauses(BaseModel):
+    """List of important clauses that are present in one document but missing in the other, along with potential risks associated with their absence."""
+
+    clause_title: str = Field(..., description="Name of the missing clause (e.g., 'Indemnification', 'Limitation of Liability')")
+    missing_in: str = Field(..., description="Indicates which document is missing the clause: 'Doc A' or 'Doc B'")
+    clause_text: str = Field(..., description="Verbatim text of the missing clause from the document where it is present")
+    impact_summary: str = Field(..., description="Summary of the potential legal and commercial risks associated with the absence of this clause in the other document")
+    significance: str = Field(..., description="high, medium, or low significance based on the potential risks")
+
+
 class DocumentComparisonResult(BaseModel):
     """Result of comparing two versions of a document, including a summary and detailed changes."""
 
-    executive_summary: str = Field(..., description="3-5 sentences — total changes found, the 2-3 most impactful, overall risk direction and which party it favors")
-    overall_risk_impact: str = Field(..., description="Net effect of all changes combined")
+    # executive_summary: str = Field(..., description="3-5 sentences — total changes found, the 2-3 most impactful, overall risk direction and which party it favors")
+    # overall_risk_impact: str = Field(..., description="Net effect of all changes combined")
     changes: List[ClauseChange] = Field(..., description="List of specific changes identified in the document comparison")
+    missing_clauses: List[MissingClauses] = Field(
+        ..., description="List of important clauses that are present in one document but missing in the other, along with potential risks associated with their absence"
+    )
 
 
 async def extract_data_from_doc(doc: Document) -> str:
