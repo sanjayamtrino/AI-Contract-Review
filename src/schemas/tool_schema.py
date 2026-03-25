@@ -51,6 +51,21 @@ class KeyInformationToolResponse(BaseModel):
     parties: List[KeyInfomationPartiesSchema] = Field(..., description="All named contracting parties.")
 
 
+class NDAGenerationRequest(BaseModel):
+    """Request schema for NDA generation tool."""
+
+    nda_description: str = Field(..., description="User-provided description and requirements for the NDA.")
+    # step: str = Field("headings", description="Step of generation: headings, add_content, refine, final")
+    # prior_draft: Optional[str] = Field(None, description="Previous output from an earlier step (if applicable).")
+    headings: Optional[str] = Field(None, description="selected NDA heading.")
+
+
+class NDAGenerationResponse(BaseModel):
+    """Response schema for NDA generation tool."""
+
+    generated_text: str = Field(..., description="Generated NDA text for the requested step.")
+
+
 class ToolResponse(BaseModel):
     """Response Schema for the tool responses."""
 
