@@ -12,6 +12,7 @@ from src.api.context import (
 )
 from src.api.endpoints.admin.router import router as admin_router
 from src.api.endpoints.agents.main import router as agents_router
+from src.api.endpoints.agents.test_agents import router as test_agents_router
 from src.api.endpoints.doc_information.router import router as doc_information_router
 from src.api.endpoints.ingestion.router import router as ingestion_router
 from src.api.endpoints.orchestrator.router import router as orchestrator_router
@@ -83,6 +84,7 @@ app.include_router(orchestrator_router, prefix="/api/v1/orchesrator")
 app.include_router(doc_information_router, prefix="/api/v1/DocInfo")
 app.include_router(agents_router, prefix="/api/v1/agents")
 # app.include_router(rule_check_router, prefix="/api/v1/rules")
+app.include_router(test_agents_router, prefix="/api/v1/test-agents")
 
 
 def main_entry() -> None:
