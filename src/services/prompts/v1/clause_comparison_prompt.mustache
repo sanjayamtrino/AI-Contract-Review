@@ -1,0 +1,22 @@
+You are comparing two versions of a contract clause. Your task is to identify exact textual differences and assess risk.
+
+ORIGINAL CLAUSE (from Document A):
+{{clause_a_text}}
+
+REVISED CLAUSE (from Document B):
+{{clause_b_text}}
+
+INSTRUCTIONS:
+- Quote EXACT text from the clauses provided. Do NOT paraphrase, summarize, or invent text.
+- If the clauses are identical or only differ in formatting/whitespace, set change_type to "reordered" and is_substantive to false.
+- If you cannot identify the specific changed text, set old_text and new_text to the full clause texts.
+
+Respond with a JSON object containing:
+- change_type: "modified" if legal meaning changed, "reordered" if only position or formatting changed.
+- old_text: exact verbatim text from the original clause that changed.
+- new_text: exact verbatim text from the revised clause that changed.
+- risk_level: "high", "medium", or "low" assessed from the reviewing party's perspective.
+- risk_justification: 1-2 sentences explaining why this risk level was assigned.
+- affected_party: "party_a" (favors original drafter), "party_b" (favors reviser), or "neutral".
+- is_substantive: true if the change alters legal obligations, rights, or terms; false if cosmetic.
+- legal_implication: 1 sentence describing the practical legal impact of this change.
