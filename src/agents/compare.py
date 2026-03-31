@@ -225,12 +225,261 @@ async def match_clauses(clauses_a, clauses_b, embedding_service) -> MatchResult:
     return MatchResult(paired=paired, unmatched_a=unmatched_a, unmatched_b=unmatched_b)
 
 
-# --- Stage 3: LLM Comparison (stub for Task 2) ---
+# --- Stage 3: LLM Comparison ---
 
-# compare_clause_pair, build_change_entry, build_added_entry, build_removed_entry,
-# group_by_section, and run() will be implemented in Task 2.
+
+async def compare_clause_pair(
+    clause_a: ClauseUnit,
+    clause_b: ClauseUnit,
+    llm_client,
+) -> ClauseComparisonResult:
+    """Compare a matched clause pair via a focused LLM call.
+
+    Each call sees only the two clause texts -- no cross-contamination.
+
+    Args:
+        clause_a: Clause from the original document.
+        clause_b: Clause from the revised document.
+        llm_client: AzureOpenAIModel instance.
+
+    Returns:
+        ClauseComparisonResult with change_type, risk_level, etc.
+    """
+    prompt = load_prompt("clause_comparison_prompt")
+    context = {
+        "clause_a_text": clause_a.content,
+        "clause_b_text": clause_b.content,
+    }
+
+    result = await llm_client.generate(
+        prompt=prompt,
+        context=context,
+        response_model=ClauseComparisonResult,
+        system_message=(
+            "You are comparing two contract clause versions. "
+            "Quote exact text differences. Do not paraphrase."
+        ),
+        temperature=0.1,
+    )
+    return result
+
+
+# --- Stage 4: Change Entry Builders ---
+
+
+def build_change_entry(match: ClauseMatch, comparison: ClauseComparisonResult) -> ChangeEntry:
+    """Convert a matched pair's LLM comparison result into a ChangeEntry.
+
+    For reordered clauses (similarity > 0.98), risk_level is left as None
+    (informational only).
+    """
+    clause_id = (
+        match.clause_a.section_heading
+        or f"clause-{match.clause_a.position}"
+    )
+
+    # Reordered clauses are informational -- no risk level
+    if comparison.change_type == "reordered":
+        return ChangeEntry(
+            change_type="reordered",
+            clause_id=clause_id,
+            clause_heading=match.clause_a.section_heading,
+            old_text=match.clause_a.content,
+            new_text=match.clause_b.content,
+            risk_level=None,
+            risk_justification=None,
+            affected_party=None,
+            is_substantive=False,
+            legal_implication=comparison.legal_implication,
+        )
+
+    return ChangeEntry(
+        change_type=comparison.change_type,
+        clause_id=clause_id,
+        clause_heading=match.clause_a.section_heading,
+        old_text=match.clause_a.content,
+        new_text=match.clause_b.content,
+        risk_level=comparison.risk_level,
+        risk_justification=comparison.risk_justification,
+        affected_party=comparison.affected_party,
+        is_substantive=comparison.is_substantive,
+        legal_implication=comparison.legal_implication,
+    )
+
+
+def build_added_entry(clause: ClauseUnit) -> ChangeEntry:
+    """Build a ChangeEntry for a clause present only in the revised document."""
+    return ChangeEntry(
+        change_type="added",
+        clause_id=clause.section_heading or f"clause-{clause.position}",
+        clause_heading=clause.section_heading,
+        old_text=None,
+        new_text=clause.content,
+        risk_level="high",
+        risk_justification="New clause not present in original document -- requires review",
+        affected_party=None,
+        is_substantive=True,
+        legal_implication="New clause introduces terms not in the original agreement",
+    )
+
+
+def build_removed_entry(clause: ClauseUnit) -> ChangeEntry:
+    """Build a ChangeEntry for a clause present only in the original document."""
+    return ChangeEntry(
+        change_type="removed",
+        clause_id=clause.section_heading or f"clause-{clause.position}",
+        clause_heading=clause.section_heading,
+        old_text=clause.content,
+        new_text=None,
+        risk_level="high",
+        risk_justification="Clause removed from original document -- protection may be lost",
+        affected_party=None,
+        is_substantive=True,
+        legal_implication="Removal of this clause may eliminate previously agreed protections",
+    )
+
+
+# --- Stage 5: Section Grouping ---
+
+
+def group_by_section(changes: List[ChangeEntry]) -> List[SectionDiff]:
+    """Group change entries by their clause_heading into SectionDiff objects.
+
+    Clauses with no heading are grouped under 'General / Ungrouped'.
+    """
+    from collections import OrderedDict
+
+    sections: OrderedDict[str, List[ChangeEntry]] = OrderedDict()
+    for change in changes:
+        heading = change.clause_heading or "General / Ungrouped"
+        if heading not in sections:
+            sections[heading] = []
+        sections[heading].append(change)
+
+    return [
+        SectionDiff(section_heading=heading, changes=section_changes)
+        for heading, section_changes in sections.items()
+    ]
+
+
+# --- Pipeline Orchestrator ---
 
 
 async def run(session_id: str, document_id_a: str, document_id_b: str) -> CompareResponse:
-    """Compare two documents within a session. Stub -- Task 2 completes this."""
-    raise NotImplementedError("run() will be completed in Task 2")
+    """Compare two documents within a session.
+
+    Pipeline: extract clauses -> match via embeddings -> compare pairs via LLM
+    -> group by section -> return structured diff.
+
+    Args:
+        session_id: Session containing both ingested documents.
+        document_id_a: Document ID of the original/baseline contract.
+        document_id_b: Document ID of the revised contract.
+
+    Returns:
+        CompareResponse with sections, metadata, or error.
+    """
+    try:
+        container = get_service_container()
+        session_manager = container.session_manager
+        embedding_service = container.embedding_service
+        llm_client = container.azure_openai_model
+
+        # Validate session
+        session = session_manager.get_session(session_id)
+        if session is None:
+            return CompareResponse(error=f"Session '{session_id}' not found")
+
+        # Validate documents exist
+        if document_id_a not in session.documents:
+            return CompareResponse(
+                error=f"Document '{document_id_a}' not found in session"
+            )
+        if document_id_b not in session.documents:
+            return CompareResponse(
+                error=f"Document '{document_id_b}' not found in session"
+            )
+
+        # Stage 1: Extract clauses
+        clauses_a = extract_clauses(session, document_id_a)
+        clauses_b = extract_clauses(session, document_id_b)
+        logger.info(
+            "Extracted clauses: doc_a=%d, doc_b=%d", len(clauses_a), len(clauses_b)
+        )
+
+        # Stage 2: Match clauses via embedding similarity
+        match_result = await match_clauses(clauses_a, clauses_b, embedding_service)
+
+        # Build metadata
+        doc_a_meta = session.documents[document_id_a].get("metadata", {})
+        doc_b_meta = session.documents[document_id_b].get("metadata", {})
+
+        # Short-circuit: identical documents (empty match result with no unmatched)
+        if (
+            not match_result.paired
+            and not match_result.unmatched_a
+            and not match_result.unmatched_b
+        ):
+            logger.info("Documents are identical -- no changes detected")
+            metadata = ComparisonMetadata(
+                document_name_a=doc_a_meta.get("filename"),
+                document_name_b=doc_b_meta.get("filename"),
+                session_id=session_id,
+                document_id_a=document_id_a,
+                document_id_b=document_id_b,
+                comparison_timestamp=datetime.now(timezone.utc).isoformat(),
+                total_changes=0,
+            )
+            return CompareResponse(sections=[], metadata=metadata)
+
+        # Stage 3: Compare each matched pair via LLM (capped at MAX_LLM_CALLS)
+        all_changes: List[ChangeEntry] = []
+        llm_calls_made = 0
+
+        for match in match_result.paired:
+            if llm_calls_made >= MAX_LLM_CALLS:
+                logger.warning(
+                    "LLM call cap reached (%d). Remaining %d pairs skipped.",
+                    MAX_LLM_CALLS,
+                    len(match_result.paired) - llm_calls_made,
+                )
+                break
+
+            comparison = await compare_clause_pair(
+                match.clause_a, match.clause_b, llm_client
+            )
+            entry = build_change_entry(match, comparison)
+            all_changes.append(entry)
+            llm_calls_made += 1
+
+        logger.info("LLM comparison calls made: %d", llm_calls_made)
+
+        # Build added/removed entries (no LLM needed)
+        for clause in match_result.unmatched_b:
+            all_changes.append(build_added_entry(clause))
+
+        for clause in match_result.unmatched_a:
+            all_changes.append(build_removed_entry(clause))
+
+        # Stage 4: Group by section
+        sections = group_by_section(all_changes)
+
+        # Build metadata
+        metadata = ComparisonMetadata(
+            document_name_a=doc_a_meta.get("filename"),
+            document_name_b=doc_b_meta.get("filename"),
+            session_id=session_id,
+            document_id_a=document_id_a,
+            document_id_b=document_id_b,
+            comparison_timestamp=datetime.now(timezone.utc).isoformat(),
+            total_changes=len(all_changes),
+        )
+
+        return CompareResponse(sections=sections, metadata=metadata)
+
+    except ValueError as e:
+        logger.error("Validation error in compare agent: %s", str(e))
+        return CompareResponse(error=str(e))
+    except Exception as e:
+        logger.error("Internal error in compare agent: %s", str(e), exc_info=True)
+        return CompareResponse(error="Internal comparison error")
