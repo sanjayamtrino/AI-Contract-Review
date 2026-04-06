@@ -1,3 +1,5 @@
+"""Compare endpoint — clause-by-clause diff between two contract documents."""
+
 from fastapi import APIRouter
 
 from src.agents.compare import run
@@ -8,17 +10,13 @@ router = APIRouter()
 
 @router.post("/diff")
 async def compare_documents(request: CompareRequest) -> CompareResponse:
-    """Compare two contract versions and return structured clause-level diff."""
-    try:
-        result = await run(
-            session_id=request.session_id,
-            document_id_a=request.document_id_a,
-            document_id_b=request.document_id_b,
-        )
-        return result
-    except Exception as err:
-        return CompareResponse(
-            error=f"Comparison failed: {str(err)}",
-            sections=[],
-            metadata=None,
-        )
+    """Compare two contract documents within the same session.
+
+    Returns a clause-level diff with change classification,
+    risk assessment, and legal implications.
+    """
+    return await run(
+        session_id=request.session_id,
+        document_id_a=request.document_id_a,
+        document_id_b=request.document_id_b,
+    )

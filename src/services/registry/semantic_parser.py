@@ -1,3 +1,14 @@
+"""
+Semantic DOCX parser — chunks documents by semantic similarity between paragraphs.
+
+Unlike fixed-size chunking, this parser:
+  - Detects heading boundaries (both styled and structural)
+  - Splits paragraphs containing multiple inline clause headings
+  - Groups consecutive paragraphs by embedding similarity
+  - Merges orphan (too-short) chunks into neighbours
+  - Preserves clause numbering prefixes for cross-referencing
+"""
+
 import re
 import time
 import uuid
@@ -16,50 +27,54 @@ from src.exceptions.parser_exceptions import (
     DocxMetadataExtractionException,
     DocxParagraphExtractionException,
     DocxTableExtractionException,
+    EmptyTextException,
 )
 from src.schemas.registry import Chunk, ParseResult
+from src.schemas.rule_check import TextInfo
 from src.services.registry.base_parser import BaseParser
 from src.services.session_manager import SessionData
-from src.services.vector_store.embeddings.embedding_service import BGEEmbeddingService
-from src.services.vector_store.manager import get_faiss_vector_store, index_chunks
+from src.services.vector_store.embeddings.base_embedding_service import BaseEmbeddingService
+from src.services.vector_store.manager import get_faiss_vector_store
 
+# Regex: numbered section labels or ALL-CAPS titles
 _SECTION_LABEL_RE = re.compile(
     r"^("
     r"\d+[\.\)]?\s+\S.*|"
-    r"\d+[\.\)]?\s*$|"  # "1."  /  "2)"
+    r"\d+[\.\)]?\s*$|"
     r"[A-Z][A-Z\s\.\,\&\'\-]{1,60}$"
     r")"
 )
 
+# Regex: inline clause headings like "Audit Rights. " or "No Warranty. "
+_INLINE_CLAUSE_HEADING_RE = re.compile(
+    r"(?:^|(?<=\. ))"
+    r"((?:[A-Z][a-z]+(?:'[a-z]+)?)"
+    r"(?:"
+    r"(?:\s+(?:and|&|of|the|to|for|on|in|or|with|at|by|an|a|your|its|from))*"
+    r"\s+[A-Z][a-z]+(?:'[a-z]+)?"
+    r")+"
+    r"\.)\s"
+)
+
 
 class DocxParser(BaseParser, Logger):
-    """Parser for DOCX with semantic chunking."""
+    """Semantic DOCX parser with heading detection and similarity-based chunking."""
 
-    # Paragraphs shorter than this word count are candidates for the
-    # structural-heading heuristic (regardless of .docx style).
-    _HEADING_MAX_WORDS: int = 8
-
-    # Chunks with fewer words than this are considered orphans and will be
-    # merged into a neighbouring chunk in the post-pass.
-    _ORPHAN_MIN_WORDS: int = 5
+    _HEADING_MAX_WORDS: int = 8     # Max words for structural heading heuristic
+    _ORPHAN_MIN_WORDS: int = 5      # Min words for a standalone chunk
 
     def __init__(self) -> None:
-        """Initialize the parser."""
         super().__init__()
         self.settings = get_settings()
-        self.embedding_service = BGEEmbeddingService()
+        from src.dependencies import get_service_container
+
+        self.service_container = get_service_container()
+        self.embedding_service: BaseEmbeddingService = self.service_container.embedding_service
         self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
 
     @staticmethod
     def _is_structural_heading(text: str, max_words: int = 8) -> bool:
-        """Return True when *text* looks like a title or section header even
-        though the .docx author did not apply a Heading style.
-
-        ALL must pass:
-            1. Word count <= max_words   — real headings are short.
-            2. Matches _SECTION_LABEL_RE — all-caps title".
-
-        """
+        """True if text looks like a section heading (short + matches label pattern)."""
         words = text.split()
         if len(words) > max_words or len(words) == 0:
             return False
@@ -67,14 +82,12 @@ class DocxParser(BaseParser, Logger):
 
     @staticmethod
     def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
-        """Returns the similarity score between two vectors."""
-
+        """Cosine similarity between two vectors."""
         return dot(vec1, vec2) / (norm(vec1) * norm(vec2))
 
     @staticmethod
     def _merge_orphan_chunks(chunks: List[str], min_words: int = 5) -> List[str]:
-        """Merge any chunk that is too short to stand alone into its neighbour."""
-
+        """Merge chunks too short to stand alone into their neighbours."""
         if not chunks:
             return chunks
 
@@ -82,18 +95,16 @@ class DocxParser(BaseParser, Logger):
         carry: str = ""
 
         for chunk in chunks:
-            # Prepend any carried-over fragment
             if carry:
                 chunk = carry + " " + chunk
                 carry = ""
 
             if len(chunk.split()) < min_words:
-                # Too short to emit — carry forward
                 carry = chunk
             else:
                 merged.append(chunk)
 
-        # If something is still carried it means the very last chunk was short; append it to the previous chunk.
+        # Append any remaining short fragment to the last chunk
         if carry:
             if merged:
                 merged[-1] = merged[-1] + " " + carry
@@ -102,41 +113,31 @@ class DocxParser(BaseParser, Logger):
 
         return merged
 
-    # Clause numbering patterns to preserve during text cleaning.
-    # Matches prefixes like "1.1 ", "2.3.4 ", "a) ", "(i) ", "(a) ", etc.
+    # Clause numbering patterns (e.g. "1.1 ", "2.3.4 ", "(a) ", "b) ")
     _CLAUSE_PREFIX_RE = re.compile(
-        r"^(\d+[\.\)]\d*[\.\d]*\s|"   # "1.1 ", "2.3.4 ", "1) "
-        r"\([a-z]+\)\s|"              # "(a) ", "(iv) "
-        r"[a-z]\)\s)"                 # "a) ", "b) "
+        r"^(\d+[\.\)]\d*[\.\d]*\s|"
+        r"\([a-z]+\)\s|"
+        r"[a-z]\)\s)"
     )
 
     def _clean_text(self, text: str) -> str:
-        """Clean the text to remove unwanted characters.
-
-        Preserves clause numbering prefixes (e.g. '1.1 ', '2.3.4 ', 'a) ',
-        '(i) ') which are critical for contract clause identification and
-        cross-referencing.
-        """
-
+        """Clean text while preserving clause numbering prefixes."""
         if not text or not text.strip():
-            raise ValueError("Text cannot be empty.")
+            raise EmptyTextException("Text cannot be empty.")
 
-        # Replace special whitespace and invisible chars BEFORE normalization
+        # Replace special whitespace chars
         text = text.replace("\u00a0", " ")
         text = text.replace("\u200b", "")
         text = text.replace("\ufeff", "")
         text = text.replace("\r", "")
         text = re.sub(r"[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]", "", text)
 
-        # Normalize runs of whitespace to single space
+        # Normalize whitespace
         text = re.sub(r"\s+", " ", text).strip()
 
-        # Strip leading whitespace/dots but preserve clause numbering.
-        # Only strip leading dots when the text does NOT start with a
-        # clause-number pattern (e.g. "1.", "2.3", "(a)").
+        # Strip leading dots but preserve clause prefixes (e.g. "1.", "(a)")
         stripped = text.lstrip(" \n\t")
         if self._CLAUSE_PREFIX_RE.match(stripped):
-            # Clause prefix detected -- keep it intact
             text = stripped
         else:
             text = stripped.lstrip(".")
@@ -144,8 +145,7 @@ class DocxParser(BaseParser, Logger):
         return text
 
     async def clean_document(self, document: Document) -> None:
-        """Clean the document by removing trailing spaces and extra chars."""
-
+        """Normalize whitespace in all paragraphs."""
         try:
             for paragraph in document.paragraphs:
                 if paragraph.text:
@@ -154,100 +154,150 @@ class DocxParser(BaseParser, Logger):
             raise DocxCleaningException(str(e)) from e
 
     async def _extract_metadata(self, document: Document) -> Dict[str, Any]:
-        """Extract document metadata."""
-
+        """Extract document metadata (author, title, dates, word count)."""
         try:
-            properties = document.core_properties
-            paragraph_words = sum(len(p.text.split()) for p in document.paragraphs)
-            table_words = sum(len(cell.text.split()) for table in document.tables for row in table.rows for cell in row.cells)
+            self.logger.info("Extracting document metadata")
+            props = document.core_properties
+            para_words = sum(len(p.text.split()) for p in document.paragraphs)
+            table_words = sum(
+                len(cell.text.split())
+                for table in document.tables
+                for row in table.rows
+                for cell in row.cells
+            )
 
             return {
                 "source": "docx",
-                "author": properties.author or "Unknown",
-                "title": properties.title or "Untitled",
-                "created_at": properties.created.isoformat() if properties.created else None,
-                "modified_at": properties.modified.isoformat() if properties.modified else None,
+                "author": props.author or "Unknown",
+                "title": props.title or "Untitled",
+                "created_at": props.created.isoformat() if props.created else None,
+                "modified_at": props.modified.isoformat() if props.modified else None,
                 "paragraph_count": len(document.paragraphs),
                 "table_count": len(document.tables),
-                "word_count": paragraph_words + table_words,
+                "word_count": para_words + table_words,
             }
-
         except Exception as e:
             raise DocxMetadataExtractionException(str(e)) from e
 
     async def _extract_tables(self, document: Document) -> List[Dict[str, Any]]:
+        """Extract all tables as lists of row data."""
         try:
             tables = []
             for t_idx, table in enumerate(document.tables):
                 rows = [[self._clean_text(cell.text) for cell in row.cells] for row in table.rows]
-                tables.append(
-                    {
-                        "table_index": t_idx,
-                        "content": rows,
-                    }
-                )
+                tables.append({"table_index": t_idx, "content": rows})
             return tables
         except Exception as e:
             raise DocxTableExtractionException(str(e)) from e
 
     async def _extract_paragraphs(self, document: Document) -> List[Dict[str, Any]]:
+        """Extract paragraphs with heading detection (styled + structural heuristic)."""
         try:
             data = []
             for idx, p in enumerate(document.paragraphs):
                 if p.text.strip():
                     cleaned = self._clean_text(p.text)
                     if cleaned:
-                        # A paragraph is a heading if the .docx style says so
-                        # OR if it matches our structural-heading heuristic.
-                        is_heading = bool((p.style and p.style.name.startswith("Heading")) or self._is_structural_heading(cleaned, self._HEADING_MAX_WORDS))
-                        data.append(
-                            {
-                                "index": idx,
-                                "content": cleaned,
-                                "is_heading": is_heading,
-                            }
+                        is_heading = bool(
+                            (p.style and p.style.name.startswith("Heading"))
+                            or self._is_structural_heading(cleaned, self._HEADING_MAX_WORDS)
                         )
+                        data.append({"index": idx, "content": cleaned, "is_heading": is_heading})
             return data
         except Exception as e:
             raise DocxParagraphExtractionException(str(e)) from e
 
-    async def _semantic_chunk_paragraphs(self, paragraphs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Do the semantic chunking for the paragraphs to be context aware.
+    @staticmethod
+    def _split_at_clause_boundaries(paragraphs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Split paragraphs containing multiple inline clause headings.
 
-        Returns a list of dicts with keys:
-          - ``text``: the chunk content string
-          - ``section_heading``: the most recent heading preceding (or
-            starting) this chunk, or ``None`` if no heading was detected.
+        E.g. "Audit Rights. ... Integration Testing. ..." becomes two
+        separate heading+body paragraph pairs for proper chunking.
         """
+        result: List[Dict[str, Any]] = []
+
+        for para in paragraphs:
+            if para["is_heading"]:
+                result.append(para)
+                continue
+
+            text = para["content"]
+            matches = list(_INLINE_CLAUSE_HEADING_RE.finditer(text))
+
+            # 0 or 1 match means no split needed
+            if len(matches) <= 1:
+                result.append(para)
+                continue
+
+            # Split at each heading position
+            segments: List[str] = []
+            prev_start = 0
+
+            for match in matches[1:]:
+                segment = text[prev_start:match.start()].strip()
+                if segment:
+                    segments.append(segment)
+                prev_start = match.start()
+
+            last = text[prev_start:].strip()
+            if last:
+                segments.append(last)
+
+            if not segments:
+                result.append(para)
+                continue
+
+            # Emit each segment as heading + body
+            for seg in segments:
+                heading_match = _INLINE_CLAUSE_HEADING_RE.match(seg)
+                if heading_match:
+                    heading_text = heading_match.group(1)
+                    body_text = seg[heading_match.end():].strip()
+
+                    result.append({"index": para["index"], "content": heading_text, "is_heading": True})
+                    if body_text:
+                        result.append({"index": para["index"], "content": body_text, "is_heading": False, "clause_boundary": True})
+                else:
+                    result.append({"index": para["index"], "content": seg, "is_heading": False})
+
+        return result
+
+    async def _semantic_chunk_paragraphs(self, paragraphs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Group paragraphs into chunks based on embedding similarity.
+
+        Returns list of {text, section_heading} dicts.
+        """
+        # Pre-process: split inline clause headings
+        paragraphs = self._split_at_clause_boundaries(paragraphs)
 
         texts = [para["content"] for para in paragraphs]
+        embeddings = [
+            await self.embedding_service.generate_embeddings(text=t, task="text-matching")
+            for t in texts
+        ]
 
-        # Embedd the paragraphs
-        embeddings = [await self.embedding_service.generate_embeddings(text=t, task="text-matching") for t in texts]
+        # Compute pairwise similarities between consecutive paragraphs
+        similarities = [
+            self.cosine_similarity(embeddings[i], embeddings[i + 1])
+            for i in range(len(embeddings) - 1)
+        ]
 
-        # Compute pairwise cosine similarities between consecutice paragraphs
-        similarities = [self.cosine_similarity(embeddings[i], embeddings[i + 1]) for i in range(len(embeddings) - 1)]
-
-        # Determine the similarity threshold
+        # Split at points below threshold (mean - 0.75 * std)
         mean_sim = np.mean(similarities)
         std_sim = np.std(similarities)
-
         threshold = mean_sim - 0.75 * std_sim
-
         split_points = {i for i, sim in enumerate(similarities) if sim < threshold}
 
+        # Build chunks respecting headings, size limits, and split points
         chunks: List[str] = []
         chunk_headings: List[Optional[str]] = []
         current: List[str] = []
         current_len: int = 0
         current_heading: Optional[str] = None
         max_len: int = self.settings.chunk_size
-
-        # Track which heading applies to the chunk being built
         pending_heading: Optional[str] = None
 
         def _flush() -> None:
-            """Flush the current buffer into chunks (no-op when buffer is empty)."""
             nonlocal current, current_len, pending_heading
             if current:
                 chunks.append(" ".join(current))
@@ -259,51 +309,41 @@ class DocxParser(BaseParser, Logger):
             text = para["content"]
             text_len = len(text)
 
-            # Track the most recent heading for section_heading metadata
             if para["is_heading"]:
                 current_heading = text
 
-            # --- PRE-APPEND flushes ---
+            # Flush before headings or when size limit exceeded
             if para["is_heading"]:
                 _flush()
-                # New heading starts a new chunk — assign it
                 pending_heading = current_heading
             elif current_len + text_len > max_len:
                 _flush()
-                # Carry forward the current heading context
                 pending_heading = current_heading
 
-            # If this is the very first paragraph in a chunk, set the heading
             if not current:
                 pending_heading = current_heading
 
-            # Append paragraph to the current buffer
             current.append(text)
             current_len += text_len
 
-            # --- POST-APPEND flush ---
-            if i in split_points:
+            # Flush at semantic split points or clause boundaries
+            if i in split_points or para.get("clause_boundary"):
                 _flush()
 
-        # Flush any remaining paragraphs
         _flush()
 
+        # Merge orphan chunks
         raw_texts = self._merge_orphan_chunks(chunks, min_words=self._ORPHAN_MIN_WORDS)
 
-        # Re-align headings after orphan merging.
-        # _merge_orphan_chunks may reduce the list length; use the heading
-        # of the first constituent chunk for each merged result.
+        # Re-align headings after merging
         merged_headings: List[Optional[str]] = []
         src_idx = 0
         for merged_text in raw_texts:
-            # The merged text is built by concatenating consecutive short
-            # chunks. Walk forward through chunk_headings to find the matching
-            # source heading.
             if src_idx < len(chunk_headings):
                 merged_headings.append(chunk_headings[src_idx])
             else:
                 merged_headings.append(None)
-            # Advance past all source chunks that were merged into this one
+
             consumed = 0
             for j in range(src_idx, len(chunks)):
                 if chunks[j] in merged_text:
@@ -317,22 +357,58 @@ class DocxParser(BaseParser, Logger):
             for text, heading in zip(raw_texts, merged_headings)
         ]
 
-    async def parse(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
+    async def parse_data(self, data: List[TextInfo], session_data: Optional[Any] = None) -> ParseResult:
+        """Parse structured text data (list of paragraphs)."""
+        start = time.time()
+
+        paragraphs = [d.text for d in data]
+        if not paragraphs:
+            raise ValueError("No paragraphs found in the data.")
+
+        # Embed and index each paragraph
+        for para in paragraphs:
+            if not para:
+                continue
+            vector = await self.embedding_service.generate_embeddings(text=para, task="text-matching")
+            await self.vector_store.index_embedding(vector)
+
+        chunks: List[Chunk] = []
+        for i, text in enumerate(paragraphs):
+            chunks.append(
+                Chunk(
+                    chunk_id=str(uuid.uuid4()),
+                    document_id=None,
+                    chunk_index=i,
+                    content=text,
+                    embedding_model=self.embedding_service.model_name,
+                    embedding_vector=None,
+                    metadata={"chunk_type": "semantic_paragraph"},
+                    created_at=datetime.utcnow().isoformat(),
+                )
+            )
+
+        return ParseResult(
+            success=True,
+            chunks=chunks,
+            metadata={"paragraph_count": len(paragraphs), "source": "parsed_data"},
+            processing_time=time.time() - start,
+        )
+
+    async def parse_document(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
+        """Parse a DOCX document using semantic chunking."""
         start = time.time()
 
         try:
             await self.clean_document(document)
             metadata = await self._extract_metadata(document)
 
-            # assign a unique id for this document
             document_id = str(uuid.uuid4())
             metadata["document_id"] = document_id
+
             paragraphs = await self._extract_paragraphs(document)
             tables = await self._extract_tables(document)
 
-            # Determine which vector store to use
             vector_store = session_data.vector_store if session_data else self.vector_store
-
             semantic_chunks = await self._semantic_chunk_paragraphs(paragraphs)
 
             chunks: List[Chunk] = []
@@ -358,7 +434,7 @@ class DocxParser(BaseParser, Logger):
                         chunk_index=chunk_index,
                         content=cleaned,
                         embedding_model=self.embedding_service.model_name,
-                        embedding_vector=None,  # vector,
+                        embedding_vector=None,
                         metadata=chunk_metadata,
                         created_at=datetime.utcnow().isoformat(),
                     )
@@ -382,7 +458,7 @@ class DocxParser(BaseParser, Logger):
                         chunk_index=chunk_index,
                         content=table_text,
                         embedding_model=self.embedding_service.model_name,
-                        embedding_vector=None,  # vector,
+                        embedding_vector=None,
                         metadata={
                             "chunk_type": "table",
                             "table_index": table["table_index"],
@@ -393,12 +469,7 @@ class DocxParser(BaseParser, Logger):
                 )
                 chunk_index += 1
 
-            if session_data:
-                from src.services.vector_store.manager import index_chunks_in_session
-
-                index_chunks_in_session(session_data, chunks, metadata)
-            else:
-                index_chunks(chunks)
+            # NOTE: chunk_store indexing is handled by IngestionService._parse_data()
 
             return ParseResult(
                 success=True,
@@ -411,13 +482,10 @@ class DocxParser(BaseParser, Logger):
         except Exception as e:
             self.logger.error(str(e))
             return ParseResult(
-                success=False,
-                chunks=[],
-                metadata={},
-                error_message=str(e),
-                processing_time=0.0,
+                success=False, chunks=[], metadata={},
+                error_message=str(e), processing_time=0.0,
             )
 
     def is_healthy(self) -> Any:
-        """Get the health status of the parser."""
-        pass
+        """Check parser health status."""
+        return True

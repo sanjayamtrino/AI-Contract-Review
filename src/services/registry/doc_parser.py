@@ -11,6 +11,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from src.config.logging import Logger
 from src.config.settings import get_settings
+from src.dependencies import get_service_container
 from src.exceptions.parser_exceptions import (
     DocxCleaningException,
     DocxMetadataExtractionException,
@@ -20,16 +21,9 @@ from src.exceptions.parser_exceptions import (
 from src.schemas.registry import Chunk, ParseResult
 from src.services.registry.base_parser import BaseParser
 from src.services.session_manager import SessionData
-from src.services.vector_store.embeddings.embedding_service import (
-    BGEEmbeddingService,
-    # HuggingFaceEmbeddingService,
+from src.services.vector_store.embeddings.base_embedding_service import (
+    BaseEmbeddingService,
 )
-
-# from src.services.vector_store.embeddings.jina_embeddings import JinaEmbeddings
-# from src.services.vector_store.embeddings.gemini_embeddings import (
-#     GeminiEmbeddingService,
-# )
-# from src.services.vector_store.embeddings.openai_embeddings import OpenAIEmbeddings
 from src.services.vector_store.manager import get_faiss_vector_store, index_chunks
 
 
@@ -41,11 +35,8 @@ class DocxParser(BaseParser, Logger):
 
         super().__init__()
         self.settings = get_settings()
-        # self.embedding_service = HuggingFaceEmbeddingService()
-        self.embedding_service = BGEEmbeddingService()
-        # self.embedding_service = GeminiEmbeddingService()
-        # self.embedding_service = OpenAIEmbeddings()
-        # self.embedding_service = JinaEmbeddings()
+        self.service_container = get_service_container()
+        self.embedding_service: BaseEmbeddingService = self.service_container.embedding_service
         self.vector_store = get_faiss_vector_store(self.embedding_service.get_embedding_dimensions())
  
     def _clean_text(self, text: str) -> str:
@@ -211,7 +202,11 @@ class DocxParser(BaseParser, Logger):
             is_separator_regex=False,
         )
 
-    async def parse(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
+    async def parse_data(self, data: Any, session_data: Optional["SessionData"] = None) -> ParseResult:
+        """Parse data using the registry services (not implemented for DocxParser)."""
+        raise NotImplementedError("DocxParser only supports document parsing via parse_document().")
+
+    async def parse_document(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
         """Parse the DOCX data."""
 
         start_time = time.time()
@@ -315,8 +310,8 @@ class DocxParser(BaseParser, Logger):
                 chunks.append(chunk)
                 chunk_index += 1
 
-            # Store chunks in the shared manager so RetrievalService can access them
-            index_chunks(chunks)
+            # NOTE: chunk_store indexing is handled by IngestionService._parse_data()
+            # after this method returns. Do NOT call index_chunks() here.
 
             processing_time = time.time() - start_time
 

@@ -1,0 +1,35 @@
+You are reviewing a contract clause that has been {{change_type}} between two document versions.
+
+{{#contract_type}}
+CONTRACT TYPE: {{contract_type}}
+{{/contract_type}}
+{{#party_a_name}}
+PARTY A (Original Drafter): {{party_a_name}}
+{{/party_a_name}}
+{{#party_b_name}}
+PARTY B (Reviser): {{party_b_name}}
+{{/party_b_name}}
+{{#section_heading}}
+SECTION: {{section_heading}}
+{{/section_heading}}
+
+{{#is_added}}
+This clause was ADDED in the revised document (not present in the original):
+{{/is_added}}
+{{#is_removed}}
+This clause was REMOVED from the original document (not present in the revised version):
+{{/is_removed}}
+
+CLAUSE TEXT:
+{{clause_text}}
+
+INSTRUCTIONS:
+1. Assess the risk level of this clause being {{change_type}} from the reviewing party's perspective.
+2. Consider the legal significance of the clause content. Not all clauses carry equal weight — a removed boilerplate formatting paragraph is low risk, while a removed indemnification clause is high risk.
+3. Determine which party is most affected by this change.
+
+Respond with a JSON object containing:
+- risk_level: "high", "medium", or "low" based on the legal significance of this clause being {{change_type}}.
+- risk_justification: 1-2 sentences explaining why this risk level was assigned.
+- affected_party: "party_a" (original drafter{{#party_a_name}} - {{party_a_name}}{{/party_a_name}}), "party_b" (reviser{{#party_b_name}} - {{party_b_name}}{{/party_b_name}}), or "neutral".
+- legal_implication: 1 sentence describing the practical legal impact of this clause being {{change_type}}.

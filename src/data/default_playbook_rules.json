@@ -1,0 +1,98 @@
+[
+  {
+    "name": "Limitation of Liability",
+    "category": "liability",
+    "standard_position": "Liability shall be limited to the total fees paid under this agreement in the 12 months preceding the claim. Neither party shall be liable for indirect, consequential, or punitive damages.",
+    "fallback_position": "Liability shall be limited to 2x the total fees paid under this agreement. Consequential damages are excluded except for breaches of confidentiality and IP infringement.",
+    "canned_response": "We propose limiting liability to fees paid in the prior 12 months with a mutual exclusion of indirect and consequential damages. This is standard market practice for agreements of this nature.",
+    "order": 1
+  },
+  {
+    "name": "Indemnification",
+    "category": "liability",
+    "standard_position": "Each party shall indemnify the other for third-party claims arising from its own negligence, willful misconduct, or breach of the agreement. Indemnification shall be mutual and proportionate.",
+    "fallback_position": "The service provider shall indemnify the client for IP infringement claims. Mutual indemnification for confidentiality breaches. All other indemnification obligations are proportionate to fault.",
+    "canned_response": "We require mutual and proportionate indemnification. We are happy to provide IP indemnification for our services but request that indemnification obligations be balanced between both parties.",
+    "order": 2
+  },
+  {
+    "name": "Termination for Convenience",
+    "category": "termination",
+    "standard_position": "Either party may terminate for convenience upon 30 days prior written notice. Upon termination, all fees for services rendered through the termination date shall be due.",
+    "fallback_position": "Either party may terminate for convenience upon 60 days prior written notice. A reasonable wind-down period shall apply for ongoing deliverables.",
+    "canned_response": "We propose mutual termination for convenience with 30 days notice. This ensures both parties retain flexibility while providing adequate transition time.",
+    "order": 3
+  },
+  {
+    "name": "Termination for Cause",
+    "category": "termination",
+    "standard_position": "Either party may terminate for material breach upon 30 days written notice if the breach remains uncured. Termination for cause shall not release either party from obligations accrued prior to termination.",
+    "fallback_position": "Either party may terminate for material breach upon 15 days written notice with a cure period. Repeated minor breaches constituting a pattern may be treated as material breach.",
+    "canned_response": "We propose a mutual right to terminate for material breach with a 30-day cure period. This provides both parties adequate time to remedy issues before termination.",
+    "order": 4
+  },
+  {
+    "name": "Intellectual Property Ownership",
+    "category": "ip",
+    "standard_position": "All pre-existing IP remains the property of its owner. Work product created specifically for the client shall be assigned to the client upon full payment. The service provider retains ownership of its tools, methodologies, and general know-how.",
+    "fallback_position": "Client receives an exclusive, perpetual license to all work product. Pre-existing IP and general tools remain with the service provider with a broad license granted to the client.",
+    "canned_response": "We propose that deliverables created specifically for you transfer upon payment, while our pre-existing tools and methodologies remain ours with a license for your use. This is the industry standard approach.",
+    "order": 5
+  },
+  {
+    "name": "Confidentiality",
+    "category": "data_protection",
+    "standard_position": "Both parties shall maintain confidentiality of all proprietary information for the term of the agreement plus 3 years. Standard carve-outs apply for publicly available information, independently developed information, and court-ordered disclosures.",
+    "fallback_position": "Confidentiality obligations shall survive for 5 years post-termination. Trade secrets shall be protected indefinitely. Permitted disclosures include affiliates and professional advisors under NDA.",
+    "canned_response": "We propose mutual confidentiality obligations lasting 3 years post-termination with standard exceptions. Trade secrets will be protected for their duration as trade secrets under applicable law.",
+    "order": 6
+  },
+  {
+    "name": "Data Protection and Privacy",
+    "category": "data_protection",
+    "standard_position": "The service provider shall comply with all applicable data protection laws including GDPR and CCPA. A data processing agreement shall be executed as an addendum. Data shall be processed only for the purposes specified in the agreement.",
+    "fallback_position": "Compliance with data protection laws applicable to the jurisdiction of the data subjects. Data processing agreement to be negotiated separately. Annual audits permitted.",
+    "canned_response": "We are committed to full compliance with applicable data protection regulations and are happy to execute a DPA as an addendum to this agreement.",
+    "order": 7
+  },
+  {
+    "name": "Governing Law and Dispute Resolution",
+    "category": "dispute_resolution",
+    "standard_position": "The agreement shall be governed by the laws of the service provider's jurisdiction. Disputes shall be resolved through binding arbitration under ICC rules. Each party bears its own legal costs.",
+    "fallback_position": "Governing law of a mutually agreed neutral jurisdiction. Mediation as a mandatory first step before arbitration. Prevailing party entitled to reasonable attorney fees.",
+    "canned_response": "We propose governing law of our jurisdiction with disputes resolved through binding arbitration. We are open to discussing a mutually agreeable jurisdiction.",
+    "order": 8
+  },
+  {
+    "name": "Force Majeure",
+    "category": "general",
+    "standard_position": "Neither party shall be liable for failure to perform due to events beyond reasonable control including natural disasters, war, pandemic, government action, or widespread infrastructure failure. Affected party must provide notice within 5 business days. If force majeure continues for 90 days, either party may terminate.",
+    "fallback_position": "Force majeure with an expanded definition including supply chain disruptions and cyber attacks. Notice within 10 business days. Termination right after 120 days of continuous force majeure.",
+    "canned_response": "We propose a standard mutual force majeure clause with a 90-day threshold for termination rights. This protects both parties from extraordinary circumstances beyond their control.",
+    "order": 9
+  },
+  {
+    "name": "Payment Terms",
+    "category": "financial",
+    "standard_position": "Payment shall be due within 30 days of invoice (Net 30). Late payments shall accrue interest at 1.5% per month. All fees are exclusive of applicable taxes.",
+    "fallback_position": "Payment within 45 days of invoice (Net 45). Late payment interest at the lesser of 1% per month or the maximum rate permitted by law.",
+    "canned_response": "We propose Net 30 payment terms with 1.5% monthly interest on overdue amounts. This is standard commercial practice and ensures timely cash flow for service delivery.",
+    "order": 10
+  },
+  {
+    "name": "Warranty",
+    "category": "general",
+    "standard_position": "Services shall be performed in a professional and workmanlike manner consistent with industry standards. Warranties are limited to 90 days from delivery. All other warranties express or implied are disclaimed.",
+    "fallback_position": "Extended warranty period of 180 days. Warranty covers material conformance to specifications. Re-performance as sole remedy for warranty breach.",
+    "canned_response": "We warrant that services will be performed professionally and in accordance with industry standards. We propose a 90-day warranty period with re-performance as the remedy.",
+    "order": 11
+  },
+  {
+    "name": "Non-Solicitation",
+    "category": "general",
+    "standard_position": "During the term and for 12 months following termination, neither party shall solicit or hire the other party's employees who were directly involved in the performance of this agreement without prior written consent.",
+    "fallback_position": "Non-solicitation period of 6 months post-termination. Limited to direct solicitation only and does not restrict hiring through general recruitment channels.",
+    "canned_response": "We propose a mutual 12-month non-solicitation clause limited to employees directly involved in this engagement. General recruitment activities are not restricted.",
+    "order": 12
+  }
+]

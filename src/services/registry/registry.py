@@ -1,34 +1,32 @@
+"""Parser registry — manages available document parsers."""
+
 from typing import Dict, Optional
 
+from src.config.logging import Logger
+from src.exceptions.parser_exceptions import ParserAlreadyRegistered
 from src.services.registry.base_parser import BaseParser
-
-# from src.services.registry.doc_parser import DocxParser
 from src.services.registry.semantic_parser import DocxParser
 
 
-class ParserRegistry:
-    """Registry Service for Parsers."""
+class ParserRegistry(Logger):
+    """Registry for document parsers, keyed by file type."""
 
     def __init__(self) -> None:
-        """Initialize the ParserRegistry with an empty registry."""
-
         self.parsers: Dict[str, BaseParser] = {}
         self._register_default_parsers()
 
     def _register_default_parsers(self) -> None:
-        """Register default parsers in the registry."""
-
+        """Register built-in parsers."""
         self.parsers["DOCX"] = DocxParser()
+        self.logger.info("Registered default parser: DOCX")
 
     def register_parser(self, name: str, parser_class: BaseParser) -> None:
-        """Register a parser class in the registry."""
-
+        """Register a new parser by name."""
         if name in self.parsers:
-            raise ValueError(f"Parser '{name}' is already registered.")
+            raise ParserAlreadyRegistered(f"Parser '{name}' is already registered.")
         self.parsers[name] = parser_class
+        self.logger.info(f"Registered parser: {name}")
 
-    # Need to implement this method
     def get_parser(self) -> Optional[BaseParser]:
-        """Retrive the relavent parser class from the registry based on file extension."""
-
+        """Get the appropriate parser (currently defaults to DOCX)."""
         return self.parsers.get("DOCX")

@@ -1,0 +1,87 @@
+You are an expert legal contract analyst. Your task is to extract every distinct clause from the provided contract document text.
+
+## CRITICAL RULES
+1. Extract EVERY clause present in the document — do not skip any.
+2. Copy the clause text EXACTLY as it appears. Do NOT paraphrase, summarize, or truncate.
+3. Each numbered section (e.g., "1.", "2.", "9.") MUST be extracted as exactly ONE clause. Do NOT merge two numbered sections into a single clause entry. Do NOT combine adjacent sections.
+4. If a single numbered section contains multiple sub-provisions (e.g., "(a)", "(b)", "(c)"), keep them together as ONE clause (do not split sub-provisions).
+5. Do NOT include the section number itself (e.g., "1.", "9.") in the "text" field — start with the heading or first word of the clause body.
+6. Ignore document headers, footers, page numbers, signature blocks, and purely formatting elements.
+7. The "heading" field MUST use the clause's own heading text from the document (e.g., "Advertising & Press Releases", "Integration Testing"). Use CONSISTENT heading text — if two documents use the same heading for the same clause, your extracted heading must match exactly.
+8. IMPORTANT: A typical contract has 8-20 or more numbered clauses. If you are extracting fewer than 5 clauses, re-read the document more carefully — you are likely merging multiple sections into one.
+9. Look for ALL section boundaries: numbered headings (1., 2., 3...), titled paragraphs, or distinct legal provisions separated by line breaks.
+
+## Document Version
+This is **{{version_label}}** ({{version_description}}).
+
+## Document Text
+{{document_text}}
+
+## Extraction Instructions
+
+### Step 1: Scan the Document
+Read through the entire document and identify every distinct legal clause. Look for:
+- Numbered or lettered sections and sub-sections (e.g., "1. Definitions", "2. Obligations", "3. Term")
+- Headings followed by legal text (even without numbers)
+- Standalone paragraphs that establish obligations, rights, definitions, conditions, or restrictions
+- Recitals or "Whereas" clauses that contain binding commitments
+- EVERY section break in the document indicates a new clause — do not skip any
+
+### Step 2: Classify Each Clause
+For each clause, determine its legal type. Use precise legal categories such as:
+- Definitions
+- Term and Duration
+- Scope of Services / Scope of Work
+- Payment Terms
+- Confidentiality
+- Intellectual Property
+- Indemnification
+- Limitation of Liability
+- Termination
+- Non-Solicitation
+- Non-Compete
+- Data Protection
+- Governing Law and Jurisdiction
+- Force Majeure
+- Dispute Resolution
+- Notices
+- Assignment
+- Amendments
+- Warranties and Representations
+- Insurance
+- Survival
+- Entire Agreement
+- Severability
+- Waiver
+- Audit Rights
+- Access Restrictions
+- Advertising and Press Releases
+- Integration Testing
+
+If a clause does not fit any standard category, assign a descriptive legal type.
+
+### Step 3: Assign a Heading
+If the clause has an explicit heading in the document, use that EXACT heading text. If not, create a concise 2-6 word heading that accurately describes the clause's subject matter.
+
+## Output Schema
+Return a JSON object with exactly this structure:
+
+{
+  "clauses": [
+    {
+      "clause_id": "<{{version_prefix}}-1, {{version_prefix}}-2, etc. Sequential numbering>",
+      "version": "{{version_prefix}}",
+      "type": "<Legal category from the list above or a descriptive category>",
+      "heading": "<Explicit heading from the document OR a concise 2-6 word descriptive heading>",
+      "text": "<VERBATIM full text of the clause exactly as it appears in the document>",
+      "position": <integer position in document order, starting from 1>
+    }
+  ]
+}
+
+## Important
+- Maintain document order (position 1 = first clause in document).
+- The clause_id must use the prefix "{{version_prefix}}" followed by a hyphen and sequential number.
+- Do NOT fabricate or infer text that is not in the document.
+- If two clauses share the same heading but contain different provisions, extract them separately with the same type but distinct clause_ids.
+- Extract ALL clauses. Count the numbered sections in the document — your output should have at least as many clauses as there are numbered sections.

@@ -1,3 +1,8 @@
+"""
+Document Information Agent — selects and executes tools for
+document summary and key details extraction using LLM tool-calling.
+"""
+
 import json
 from typing import Any, Callable, Dict, List
 
@@ -7,7 +12,7 @@ from src.services.prompts.v1 import load_prompt
 from src.tools.key_details import get_key_details
 from src.tools.summarizer import get_summary
 
-# Tools owned by this agent
+# Tool registry and definitions
 TOOL_REGISTRY: Dict[str, Callable] = {
     "get_summary": get_summary,
     "get_key_details": get_key_details,
@@ -19,8 +24,8 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         "function": {
             "name": "get_summary",
             "description": (
-                "Get a comprehensive summary of the legal document including "
-                "document type, parties involved, key terms, critical dates, and risks."
+                "Generate a comprehensive summary including document type, "
+                "parties, key terms, critical dates, and risks."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -30,8 +35,8 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         "function": {
             "name": "get_key_details",
             "description": (
-                "Extract structured key details from the legal document including "
-                "parties, effective/expiration dates, contract value, duration, and payment terms."
+                "Extract structured key details: parties, dates, "
+                "contract value, duration, and payment terms."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -40,11 +45,9 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
 
 
 async def run(query: str, session_id: str) -> AgentResponse:
-    """Doc Information Agent — decides which tool to use and executes it."""
-
+    """Decide which document info tool to call and execute it."""
     container = get_service_container()
     client = container.azure_openai_model
-
     agent_prompt = load_prompt("doc_information_agent_prompt")
 
     messages: List[Dict[str, Any]] = [
@@ -52,7 +55,7 @@ async def run(query: str, session_id: str) -> AgentResponse:
         {"role": "user", "content": query},
     ]
 
-    # Step 1: Ask the LLM which tool(s) to call (retry-wrapped)
+    # Ask the LLM which tool(s) to call
     response = await client.chat_completion(
         messages=messages,
         tools=TOOL_DEFINITIONS,
@@ -62,14 +65,14 @@ async def run(query: str, session_id: str) -> AgentResponse:
 
     assistant_message = response.choices[0].message
 
-    # No tool calls — return the LLM's text response (clarification etc.)
+    # No tool calls — return the LLM's clarification text
     if not assistant_message.tool_calls:
         return AgentResponse(
             agent="doc_information",
             response=assistant_message.content or "",
         )
 
-    # Step 2: Execute the tool(s) and return raw results directly
+    # Execute tool(s) and collect results
     tools_called: List[str] = []
     tool_results: Dict[str, Any] = {}
 

@@ -6,21 +6,9 @@ from fastapi.responses import HTMLResponse
 
 from src.api.session_utils import get_session_id
 from src.schemas.tool_schema import NDAGenerationRequest
-from src.tools.comparision import compare_doc_versions
 from src.tools.nda_generation import generate_heading_description, generate_nda_headings
 
 router = APIRouter(tags=["agents"])
-
-
-@router.post("/version-comparison")
-async def compare_documents(doc1: UploadFile, doc2: UploadFile):
-    """Endpoint to compare two document versions."""
-
-    doc1_obj = Document(io.BytesIO(await doc1.read()))
-    doc2_obj = Document(io.BytesIO(await doc2.read()))
-
-    result = await compare_doc_versions(doc1_obj, doc2_obj)
-    return result
 
 
 @router.post("/generate-nda-headings")

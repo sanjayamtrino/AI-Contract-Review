@@ -1,3 +1,5 @@
+"""Exceptions for document parsing operations."""
+
 from src.exceptions.base_exception import AppException
 
 
@@ -24,6 +26,20 @@ class DocxParagraphExtractionException(AppException):
 
 class DocxTableExtractionException(AppException):
     """Exception raised for errors during DOCX table extraction."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class EmptyTextException(AppException):
+    """Exception raised when the extracted text from a document is empty."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class ParserAlreadyRegistered(AppException):
+    """Exception raised when trying to register a parser that is already registered."""
 
     def __init__(self, message: str) -> None:
         super().__init__(message)

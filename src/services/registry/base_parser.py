@@ -1,3 +1,5 @@
+"""Abstract base class for document parsers."""
+
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
@@ -9,19 +11,24 @@ from src.services.session_manager import SessionData
 
 
 class BaseParser(ABC, Logger):
-    """Abstract base class for parsers in the registry service."""
+    """All parsers in the registry must implement this interface."""
 
     @abstractmethod
-    async def parse(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
-        """Parse the given document."""
+    async def parse_document(self, document: Document, session_data: Optional["SessionData"] = None) -> ParseResult:
+        """Parse a DOCX document into chunks."""
+        pass
+
+    @abstractmethod
+    async def parse_data(self, data: Any, session_data: Optional["SessionData"] = None) -> ParseResult:
+        """Parse structured data into chunks."""
         pass
 
     @abstractmethod
     async def clean_document(self, document: Document) -> None:
-        """Clean the document before parsing."""
+        """Pre-process the document before parsing."""
         pass
 
     @abstractmethod
     def is_healthy(self) -> Any:
-        """Get the health status of the parser."""
+        """Check parser health status."""
         pass
