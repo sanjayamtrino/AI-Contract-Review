@@ -579,14 +579,17 @@ async def run(document_a: Document, document_b: Document) -> CompareResponse:
     doc_a: ParseResult = await parser.parse_document(document_a)
     doc_b: ParseResult = await parser.parse_document(document_b)
 
-    # # Guard: same document
-    # if hash(document_a) == hash(document_b):
-    #     return CompareResponse(
-    #         success=True,
-    #         message="Both document IDs are the same. Provide two different documents to compare.",
-    #         summary=_zero_changes_summary(),
-    #         sections=[],
-    #     )
+    doc_text_a = await extract_text(document_a)
+    doc_text_b = await extract_text(document_b)
+
+    # Guard: same document
+    if hash(doc_text_a) == hash(doc_text_b):
+        return CompareResponse(
+            success=True,
+            message="Both document IDs are the same. Provide two different documents to compare.",
+            summary=_zero_changes_summary(),
+            sections=[],
+        )
 
     # Stage 1: Extract clauses
     logger.info("Extracting clauses for the doccuments...")

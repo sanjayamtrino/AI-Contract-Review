@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from src.config.logging import Logger
 from src.config.settings import get_settings
-from src.schemas.query_rewriter import QueryRewriterResponse
+from src.schemas.doc_chat import QueryRewriterResponse
 from src.services.llm.base_model import BaseLLMModel
 from src.services.session_manager import SessionData
 from src.services.vector_store.embeddings.base_embedding_service import (

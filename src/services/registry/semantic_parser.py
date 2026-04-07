@@ -18,8 +18,8 @@ from src.exceptions.parser_exceptions import (
     DocxTableExtractionException,
     EmptyTextException,
 )
+from src.schemas.playbook_review import TextInfo
 from src.schemas.registry import Chunk, ParseResult
-from src.schemas.rule_check import TextInfo
 from src.services.registry.base_parser import BaseParser
 from src.services.session_manager import SessionData
 from src.services.vector_store.embeddings.base_embedding_service import (

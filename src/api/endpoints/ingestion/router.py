@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, UploadFile
 
 from src.api.session_utils import get_session_id
 from src.dependencies import get_service_container
+from src.schemas.playbook_review import TextInfo
 from src.schemas.registry import ParseResult
-from src.schemas.rule_check import TextInfo
 
 router = APIRouter()
 

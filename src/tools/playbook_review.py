@@ -6,15 +6,20 @@ import numpy as np
 
 from src.config.logging import get_logger
 from src.dependencies import get_service_container
-from src.schemas.rule_check import (
+from src.schemas.playbook_review import (
     MissingClausesLLMResponse,
     ParaSimilarity,
+    PlayBookReviewFinalResponse,
+    PlayBookReviewLLMResponse,
+    PlayBookReviewResponse,
     RuleCheckRequest,
     RuleResult,
     TextInfo,
 )
 
 logger = get_logger(__name__)
+
+similarity_prompt_template = Path(r"src\services\prompts\v1\ai_review_prompt_v2.mustache").read_text(encoding="utf-8")
 
 
 async def get_missing_clauses(data: str) -> MissingClausesLLMResponse:
@@ -129,7 +134,7 @@ def find_similarity(rule_embedd: np.ndarray, para_embedds: np.ndarray, para_item
     return results
 
 
-async def get_matching_paras(request: RuleCheckRequest) -> List[RuleResult]:
+async def review_document(request: RuleCheckRequest) -> PlayBookReviewFinalResponse:
     """Get the matching paras for the given rules."""
 
     service_container = get_service_container()
@@ -184,4 +189,33 @@ async def get_matching_paras(request: RuleCheckRequest) -> List[RuleResult]:
             )
         )
 
-    return results
+        # After finding similar paragraphs for each rule, we can call the LLM to review the rule against the paragraphs
+        llm_model = service_container.azure_openai_model
+        llm_results: List[PlayBookReviewResponse] = []
+        for result in results:
+            context: Dict[str, Any] = {
+                "rule_title": result.title,
+                "rule_instruction": result.instruction,
+                "rule_description": result.description,
+                "paragraphs": result.paragraphcontext,
+            }
+
+            llm_result: PlayBookReviewLLMResponse = await llm_model.generate(prompt=similarity_prompt_template, context=context, response_model=PlayBookReviewLLMResponse)
+            response_item = PlayBookReviewResponse(
+                rule_title=result.title,
+                rule_instruction=result.instruction,
+                rule_description=result.description,
+                content=llm_result,
+            )
+            llm_results.append(response_item)
+
+        # We can also call the LLM to find missing clauses based on the combined paragraph context
+        data = " ".join([res.paragraphcontext for res in results])
+        missing_clauses: MissingClausesLLMResponse = await get_missing_clauses(data=data)
+
+        final_response = PlayBookReviewFinalResponse(
+            rules_review=llm_results,
+            missing_clauses=missing_clauses,
+        )
+
+    return final_response
