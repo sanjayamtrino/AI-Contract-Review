@@ -115,5 +115,5 @@ class CompareResponse(BaseModel):
     message: Optional[str] = Field(None, description="Additional information about the comparison")
     summary: Optional[CompareSummary] = Field(None, description="Summary statistics for the comparison")
     sections: List[SectionGroup] = Field(description="List of section groups containing the changes")
-    document_id_a: Optional[str] = Field(None, description="Unique identifier for Document A")
-    document_id_b: Optional[str] = Field(None, description="Unique identifier for Document B")
+    # document_id_a: Optional[str] = Field(None, description="Unique identifier for Document A")
+    # document_id_b: Optional[str] = Field(None, description="Unique identifier for Document B")
