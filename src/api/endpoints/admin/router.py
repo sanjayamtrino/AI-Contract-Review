@@ -4,7 +4,7 @@ from fastapi import APIRouter
 
 from src.dependencies import get_service_container
 
-router = APIRouter(tags=["admin"])
+router = APIRouter(tags=["Session Management"])
 
 
 @router.get("/sessions/")

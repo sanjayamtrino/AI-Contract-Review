@@ -25,6 +25,8 @@ IDENTICAL_THRESHOLD = 0.98
 SPLIT_MERGE_THRESHOLD = 0.75
 MAX_LLM_CALLS = 50
 
+AGENT_NAME = "document_comparison_agent"
+
 logger = Logger().logger
 registry = None
 
@@ -55,6 +57,16 @@ def _extract_heading_fallback(content: str) -> Optional[str]:
     first_line = content.strip().split("\n")[0].strip()
     if re.match(r"^(\d+\.[\d.]*\s|Section\s|ARTICLE\s|[A-Z][A-Z\s]{4,}$)", first_line):
         return first_line
+
+    # ALL CAPS heading on its own line
+    if re.match(r"^[A-Z][A-Z\s]{4,}$", first_line):
+        return first_line
+
+    # Title-case phrase before first ". " — e.g. "Audit Rights. Content..."
+    m = re.match(r"^([A-Z][A-Za-z\s/&,-]{2,60})\.\s", first_line)
+    if m:
+        return m.group(1).strip()
+
     return None
 
 
@@ -74,17 +86,9 @@ def extract_clauses(document: ParseResult) -> List[ClauseUnit]:
 
         heading = chunk.metadata.get("section_heading")
         if not heading:
-            heading = _extract_heading_fallback(content)
+            heading = _extract_heading_fallback(content) or chunk.metadata.get("section_heading")
 
-        clauses.append(
-            ClauseUnit(
-                clause_id=f"{chunk.chunk_id}",
-                heading=heading,
-                content=content,
-                position=chunk.chunk_index,
-                doc_order=order,
-            )
-        )
+        clauses.append(ClauseUnit(clause_id=f"{chunk.chunk_id}", heading=heading, content=content, position=chunk.chunk_index, doc_order=order, embedding=chunk.embedding_vector or []))
         order += 1
 
     return clauses
@@ -244,16 +248,13 @@ def _detect_splits_and_merges(match_result: MatchResult, clauses_a: List[ClauseU
             clause_a, clause_b = clauses_a[best_a_idx], clauses_b[j]
             entries.append(
                 ChangeEntry(
-                    clause_name=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+                    clause_title=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
                     change_type="modified",
-                    modification_type="structural",
+                    change_summary="Clause split into multiple clauses. Content preserved but restructured.",
                     risk_level="low",
-                    affected_party="Both",
-                    confidence="high",
-                    text_from_doc_a=clause_a.content,
-                    text_from_doc_b=clause_b.content,
-                    legal_implication="Clause split into multiple clauses. Content preserved but restructured.",
-                    is_substantive=False,
+                    risk_impact="Low risk — structural reorganisation only, no substantive change.",
+                    original_text=clause_a.content,
+                    revised_text=clause_b.content,
                 )
             )
             explained_b.add(j)
@@ -271,16 +272,13 @@ def _detect_splits_and_merges(match_result: MatchResult, clauses_a: List[ClauseU
             clause_a, clause_b = clauses_a[i], clauses_b[best_b_idx]
             entries.append(
                 ChangeEntry(
-                    clause_name=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+                    clause_title=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
                     change_type="modified",
-                    modification_type="structural",
+                    change_summary="Clause merged with another clause. Content preserved but combined.",
                     risk_level="low",
-                    affected_party="Both",
-                    confidence="high",
-                    text_from_doc_a=clause_a.content,
-                    text_from_doc_b=clause_b.content,
-                    legal_implication="Clause merged with another clause. Content preserved but combined.",
-                    is_substantive=False,
+                    risk_impact="Low risk — structural reorganisation only, no substantive change.",
+                    original_text=clause_a.content,
+                    revised_text=clause_b.content,
                 )
             )
             explained_a.add(i)
@@ -323,16 +321,12 @@ def _reconcile_containment(unmatched_a: List[int], unmatched_b: List[int], claus
                 clause_a, clause_b = clauses_a[i], clauses_b[j]
                 entries.append(
                     ChangeEntry(
-                        clause_name=clause_b.heading or clause_a.heading or f"Clause at position {clause_b.doc_order + 1}",
+                        clause_title=clause_b.heading or clause_a.heading or f"Clause at position {clause_b.doc_order + 1}",
                         change_type="added",
-                        modification_type="structural",
+                        change_summary="New content added alongside existing clause text in Document B.",
                         risk_level="medium",
-                        affected_party=None,
-                        confidence="high",
-                        text_from_doc_a=None,
-                        text_from_doc_b=clause_b.content,
-                        legal_implication="New content added alongside existing clause text in Document B.",
-                        is_substantive=True,
+                        risk_impact="New clause language introduced — review for additional obligations or rights.",
+                        revised_text=clause_b.content,
                     )
                 )
                 explained_a.add(i)
@@ -357,16 +351,12 @@ def _reconcile_containment(unmatched_a: List[int], unmatched_b: List[int], claus
                 clause_a, clause_b = clauses_a[i], clauses_b[j]
                 entries.append(
                     ChangeEntry(
-                        clause_name=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+                        clause_title=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
                         change_type="removed",
-                        modification_type="structural",
+                        change_summary="Content removed from this clause in Document B.",
                         risk_level="medium",
-                        affected_party=None,
-                        confidence="high",
-                        text_from_doc_a=clause_a.content,
-                        text_from_doc_b=None,
-                        legal_implication="Content removed from this clause in Document B.",
-                        is_substantive=True,
+                        risk_impact="Clause content trimmed — verify no obligations or protections were lost.",
+                        original_text=clause_a.content,
                     )
                 )
                 explained_a.add(i)
@@ -403,16 +393,13 @@ def _build_change_entry(clause_a: ClauseUnit, clause_b: ClauseUnit, comparison: 
     """Convert an LLM comparison result into a ChangeEntry."""
 
     return ChangeEntry(
-        clause_name=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+        clause_title=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
         change_type=comparison.change_type,
-        modification_type=comparison.modification_type,
+        change_summary=comparison.change_summary,
         risk_level=comparison.risk_level,
-        affected_party=comparison.affected_party,
-        confidence="high",
-        text_from_doc_a=clause_a.content,
-        text_from_doc_b=clause_b.content,
-        legal_implication=comparison.legal_implication,
-        is_substantive=comparison.is_substantive,
+        risk_impact=comparison.risk_impact,
+        original_text=comparison.original_text,
+        revised_text=comparison.revised_text,
     )
 
 
@@ -420,15 +407,13 @@ def _make_skipped_entry(clause_a: ClauseUnit, clause_b: ClauseUnit) -> ChangeEnt
     """Placeholder entry when LLM call limit is exceeded."""
 
     return ChangeEntry(
-        clause_name=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+        clause_title=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
         change_type="modified",
-        modification_type=None,
+        change_summary="Comparison skipped — LLM call limit exceeded or failed.",
         risk_level="medium",
-        confidence="low",
-        text_from_doc_a=clause_a.content,
-        text_from_doc_b=clause_b.content,
-        legal_implication="Comparison skipped due to LLM call limit.",
-        is_substantive=True,
+        risk_impact="Unable to assess — manual review recommended.",
+        original_text=clause_a.content,
+        revised_text=clause_b.content,
     )
 
 
@@ -476,12 +461,12 @@ def _build_unmatched_entries(unmatched_a: List[int], unmatched_b: List[int], cla
         clause = clauses_a[idx]
         entries.append(
             ChangeEntry(
-                clause_name=clause.heading or f"Clause at position {clause.doc_order + 1}",
+                clause_title=clause.heading or f"Clause at position {clause.doc_order + 1}",
                 change_type="removed",
+                change_summary="This clause has been removed from Document B.",
                 risk_level="medium",
-                text_from_doc_a=clause.content,
-                text_from_doc_b=None,
-                legal_implication="This clause has been removed from Document B.",
+                risk_impact="Clause removed — verify no obligations or protections were lost.",
+                original_text=clause.content,
             )
         )
 
@@ -489,12 +474,12 @@ def _build_unmatched_entries(unmatched_a: List[int], unmatched_b: List[int], cla
         clause = clauses_b[idx]
         entries.append(
             ChangeEntry(
-                clause_name=clause.heading or f"Clause at position {clause.doc_order + 1}",
+                clause_title=clause.heading or f"Clause at position {clause.doc_order + 1}",
                 change_type="added",
+                change_summary="This clause has been added in Document B.",
                 risk_level="medium",
-                text_from_doc_a=None,
-                text_from_doc_b=clause.content,
-                legal_implication="This clause has been added in Document B.",
+                risk_impact="New clause introduced — review for additional obligations or rights.",
+                revised_text=clause.content,
             )
         )
 
@@ -506,7 +491,7 @@ def group_by_section(changes: List[ChangeEntry]) -> List[SectionGroup]:
 
     section_map: Dict[str, List[ChangeEntry]] = {}
     for change in changes:
-        section = change.clause_name or "General / Ungrouped"
+        section = change.clause_title or "General / Ungrouped"
         section_map.setdefault(section, []).append(change)
 
     return [SectionGroup(section_name=name, changes=entries) for name, entries in section_map.items()]
@@ -567,7 +552,7 @@ async def extract_text(document: Document) -> str:
     return "\n".join(paragraphs)
 
 
-async def run(document_a: Document, document_b: Document) -> CompareResponse:
+async def run(session_id: str, document_a: Document, document_b: Document) -> CompareResponse:
     """Execute the full document comparison pipeline."""
 
     container = get_service_container()
@@ -575,6 +560,13 @@ async def run(document_a: Document, document_b: Document) -> CompareResponse:
     llm_client = container.azure_openai_model
 
     parser = get_parser()
+
+    # load cached data for this agent
+    session_data = container.session_manager.get_session(session_id=session_id)
+    cached_data: Dict[str, CompareResponse] = session_data.tool_results[AGENT_NAME] if AGENT_NAME in session_data.tool_results else []
+    if cached_data:
+        logger.info(f"Loaded cached data for session {session_id} and agent {AGENT_NAME}")
+        return cached_data
 
     doc_a: ParseResult = await parser.parse_document(document_a)
     doc_b: ParseResult = await parser.parse_document(document_b)
@@ -650,6 +642,14 @@ async def run(document_a: Document, document_b: Document) -> CompareResponse:
     )
 
     message = "Both documents are identical. No differences found." if summary.total_changes == 0 else None
+
+    # Store data in cache for this session and agent
+    session_data.tool_results[AGENT_NAME] = {
+        "success": True,
+        "message": message,
+        "summary": summary,
+        "sections": sections,
+    }
 
     return CompareResponse(
         success=True,

@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -32,32 +32,58 @@ class CompareRequest(BaseModel):
     document_id_b: str = Field(..., description="Unique identifier for Document B (e.g., version 2)")
 
 
+ChangeType = Literal["added", "removed", "modified", "reordered"]
+RiskLevel = Literal["high", "medium", "low"]
+
+# class ClauseComparisonLLMResponse(BaseModel):
+#     """Structured output schema for the per-pair LLM comparison call."""
+
+#     change_type: str = Field(description="One of: modified, reordered")
+#     modification_type: Optional[str] = Field(None, description="Sub-type: value, language, scope, structural, rewritten")
+#     risk_level: str = Field(description="One of: high, medium, low")
+#     affected_party: Optional[str] = Field(None, description="Which party is affected by this change")
+#     old_text: str = Field(description="Exact text from Document A that changed")
+#     new_text: str = Field(description="Exact text from Document B that changed")
+#     legal_implication: str = Field(description="Brief note on legal meaning of this change")
+#     is_substantive: bool = Field(description="Whether this is a meaningful change vs cosmetic")
+
+
 class ClauseComparisonLLMResponse(BaseModel):
     """Structured output schema for the per-pair LLM comparison call."""
 
-    change_type: str = Field(description="One of: modified, reordered")
-    modification_type: Optional[str] = Field(None, description="Sub-type: value, language, scope, structural, rewritten")
-    risk_level: str = Field(description="One of: high, medium, low")
-    affected_party: Optional[str] = Field(None, description="Which party is affected by this change")
-    old_text: str = Field(description="Exact text from Document A that changed")
-    new_text: str = Field(description="Exact text from Document B that changed")
-    legal_implication: str = Field(description="Brief note on legal meaning of this change")
-    is_substantive: bool = Field(description="Whether this is a meaningful change vs cosmetic")
+    change_type: ChangeType = Field(description="One of: added, removed, modified, reordered")
+    change_summary: str = Field(description="Brief one-sentence summary of what changed between the two versions")
+    risk_level: RiskLevel = Field(description="One of: high, medium, low")
+    risk_impact: str = Field(description="Brief explanation of how this change affects the parties legally or commercially")
+    original_text: str = Field(description="Exact text from Document A that changed")
+    revised_text: str = Field(description="Exact text from Document B that changed")
+
+
+# class ChangeEntry(BaseModel):
+#     """A single change between two document clauses."""
+
+#     clause_name: str = Field(description="Name of the clause or section where the change occurred")
+#     change_type: str = Field(description="One of: added, removed, modified, reordered")
+#     modification_type: Optional[str] = Field(None, description="Sub-type: value, language, scope, structural, rewritten")
+#     risk_level: str = Field(description="One of: high, medium, low")
+#     affected_party: Optional[str] = Field(None, description="Which party is affected by this change")
+#     confidence: str = Field("high", description="Confidence level of the change detection")
+#     text_from_doc_a: Optional[str] = Field(None, description="Text from Document A related to this change")
+#     text_from_doc_b: Optional[str] = Field(None, description="Text from Document B related to this change")
+#     legal_implication: Optional[str] = Field(None, description="Brief note on legal meaning of this change")
+#     is_substantive: bool = Field(True, description="Whether this is a meaningful change vs cosmetic")
 
 
 class ChangeEntry(BaseModel):
     """A single change between two document clauses."""
 
-    clause_name: str = Field(description="Name of the clause or section where the change occurred")
-    change_type: str = Field(description="One of: added, removed, modified, reordered")
-    modification_type: Optional[str] = Field(None, description="Sub-type: value, language, scope, structural, rewritten")
-    risk_level: str = Field(description="One of: high, medium, low")
-    affected_party: Optional[str] = Field(None, description="Which party is affected by this change")
-    confidence: str = Field("high", description="Confidence level of the change detection")
-    text_from_doc_a: Optional[str] = Field(None, description="Text from Document A related to this change")
-    text_from_doc_b: Optional[str] = Field(None, description="Text from Document B related to this change")
-    legal_implication: Optional[str] = Field(None, description="Brief note on legal meaning of this change")
-    is_substantive: bool = Field(True, description="Whether this is a meaningful change vs cosmetic")
+    clause_title: str
+    change_summary: Optional[str] = None
+    change_type: ChangeType
+    risk_level: RiskLevel
+    risk_impact: Optional[str] = None
+    original_text: Optional[str] = None
+    revised_text: Optional[str] = None
 
 
 class SectionGroup(BaseModel):

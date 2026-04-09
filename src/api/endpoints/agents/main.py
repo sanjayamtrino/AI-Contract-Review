@@ -2,7 +2,7 @@ import io
 from typing import Any
 
 from docx import Document
-from fastapi import APIRouter, Depends, UploadFile
+from fastapi import APIRouter, Depends, Header, UploadFile
 
 from src.api.session_utils import get_session_id
 from src.schemas.doc_chat import DocChatResponse
@@ -17,21 +17,21 @@ router = APIRouter(tags=["agents"])
 
 
 @router.post("/compare-documents")
-async def compare_documents_endpoint(file_a: UploadFile, file_b: UploadFile) -> Any:
+async def compare_documents_endpoint(file_a: UploadFile, file_b: UploadFile, session_id: str = Header(..., alias="X-Session-Id")) -> Any:
     """Compare two documents and return their differences."""
 
     document_a = Document(io.BytesIO(await file_a.read()))
     document_b = Document(io.BytesIO(await file_b.read()))
 
-    comparison_result = await compare_documents_service(document_a, document_b)
+    comparison_result = await compare_documents_service(session_id=session_id, document_a=document_a, document_b=document_b)
     return comparison_result
 
 
 @router.post("/playbook-review", response_model=PlayBookReviewFinalResponse)
-async def playbook_review_endpoint(request: RuleCheckRequest) -> PlayBookReviewFinalResponse:
+async def playbook_review_endpoint(request: RuleCheckRequest, session_id: str = Header(..., alias="X-Session-Id")) -> PlayBookReviewFinalResponse:
     """Run playbook validation checks."""
 
-    review_result = await playbook_review_service(request)
+    review_result = await playbook_review_service(session_id=session_id, request=request)
     return review_result
 
 

@@ -13,20 +13,15 @@ INSTRUCTIONS:
 2. Identify ALL differences, no matter how small — even single word changes, number changes, or date changes must be reported.
 3. Quote EXACT text from the clauses. Do NOT paraphrase or summarize.
 4. Classify the change type:
-   - "modified" if the content has changed
+   - "added" if content exists only in Document B (not present in Document A)
+   - "removed" if content exists only in Document A (not present in Document B)
+   - "modified" if the content exists in both but has changed
    - "reordered" if the content is the same but the position/numbering changed
-5. For modifications, classify the sub-type:
-   - "value" — numbers, dates, percentages, monetary amounts changed
-   - "language" — rewording without changing legal meaning
-   - "scope" — expanding or narrowing obligations, rights, or coverage
-   - "structural" — splitting, merging, or reorganizing sub-clauses
-   - "rewritten" — content is entirely different despite same heading
-6. Assess the risk level:
+5. Assess the risk level:
    - "high" — changes obligations, liability, indemnity, termination rights, or payment terms
    - "medium" — changes scope, definitions, or procedural requirements
    - "low" — cosmetic, formatting, or non-substantive language changes
-7. Identify which party is affected (e.g., "Buyer", "Seller", "Both", "Neither").
-8. Provide a brief legal implication (one sentence).
-9. Set is_substantive to false ONLY for purely cosmetic changes (whitespace, formatting, capitalization).
+6. Provide a brief one-sentence change_summary describing what changed.
+7. Provide a brief risk_impact explaining how this change affects the parties legally or commercially.
 
 Respond with a JSON object matching the required schema.

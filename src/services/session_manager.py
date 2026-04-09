@@ -136,6 +136,7 @@ class SessionManager(Logger):
                     }
                     for doc_id, doc in session.documents.items()
                 ],
+                "tool_results": session.tool_results,
                 "vectors_added": session.vector_store.stats["vectors_added"],
                 "is_expired": session.is_expired(self.ttl_seconds),
             }

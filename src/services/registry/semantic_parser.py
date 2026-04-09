@@ -278,7 +278,7 @@ class DocxParser(BaseParser, Logger):
                 chunk_index=i,
                 content=paragraphs[i],
                 embedding_model=self.embedding_service.model_name,
-                embedding_vector=None,
+                embedding_vector=vector,
                 metadata={"chunk_type": "semantic_paragraph"},
                 created_at=datetime.utcnow().isoformat(),
             )

@@ -21,6 +21,8 @@ logger = get_logger(__name__)
 
 similarity_prompt_template = Path(r"src\services\prompts\v1\ai_review_prompt_v2.mustache").read_text(encoding="utf-8")
 
+AGENT_NAME = "playbook_review_agent"
+
 
 async def get_missing_clauses(data: str) -> MissingClausesLLMResponse:
     """Get the missing clauses for the given contract text."""
@@ -134,24 +136,57 @@ def find_similarity(rule_embedd: np.ndarray, para_embedds: np.ndarray, para_item
     return results
 
 
-async def review_document(request: RuleCheckRequest) -> PlayBookReviewFinalResponse:
-    """Get the matching paras for the given rules."""
+async def review_document(session_id: str, request: RuleCheckRequest, force_update_rules: List[str] = None) -> PlayBookReviewFinalResponse:
+    """Run playbook review for the given document and rules, with optional force update for specific rules."""
+
+    force_update_rules = force_update_rules or []
 
     service_container = get_service_container()
     embedding_model = service_container.embedding_service
+    llm_model = service_container.azure_openai_model
 
-    rule_texts = [f"title: {rule.title}. " f"description: {rule.description}." f"tags: {', '.join(rule.tags)}" for rule in request.rulesinformation]
-    # rule_texts = [f"title: {rule.title}. " f"description: {rule.description}." for rule in request.rulesinformation]
+    session_data = service_container.session_manager.get_session(session_id)
+    if not session_data:
+        return PlayBookReviewFinalResponse(rules_review=[], missing_clauses=None)
 
-    logger.info("Generating embeddings for rules and paragraphs.")
+    # Load cached rules for this agent
+    agent_cache = session_data.tool_results.get(AGENT_NAME, {})
+    cached_rules_review: Dict[str, PlayBookReviewResponse] = {r.rule_title: r for r in agent_cache.get("rules_review", [])}
+
+    # Determine which rules need to be updated
+    rules_to_update: List[RuleCheckRequest] = []
+
+    for rule in request.rulesinformation:
+        cached_rule = cached_rules_review.get(rule.title)
+
+        # Force update if explicitly requested
+        if force_update_rules and rule.title in force_update_rules:
+            rules_to_update.append(rule)
+            continue
+
+        # Update if rule is new
+        if not cached_rule:
+            rules_to_update.append(rule)
+            continue
+
+        # Update if description or instruction has changed
+        if cached_rule.rule_description != rule.description or cached_rule.rule_instruction != rule.instruction:
+            rules_to_update.append(rule)
+
+    if not rules_to_update:
+        # Nothing to update, return cached results
+        return PlayBookReviewFinalResponse(
+            rules_review=list(cached_rules_review.values()),
+            missing_clauses=agent_cache.get("missing_clauses"),
+        )
+
+    # Generate embeddings for rules to update and all paragraphs
+    rule_texts = [f"title: {rule.title}. description: {rule.description}. tags: {', '.join(rule.tags)}" for rule in rules_to_update]
     rule_embeddings = np.array(await asyncio.gather(*[embedding_model.generate_embeddings(text) for text in rule_texts]))
     para_embeddings = np.array(await asyncio.gather(*[embedding_model.generate_embeddings(item.text) for item in request.textinformation]))
 
-    results: List[RuleResult] = []
-
-    for rule, rule_emb in zip(request.rulesinformation, rule_embeddings):
-
-        logger.info(f"Finding similar paragraphs for rule '{rule.title}'.")
+    # Process each rule to update
+    for rule, rule_emb in zip(rules_to_update, rule_embeddings):
         matched: List[ParaSimilarity] = find_similarity(
             rule_embedd=rule_emb,
             para_embedds=para_embeddings,
@@ -161,25 +196,19 @@ async def review_document(request: RuleCheckRequest) -> PlayBookReviewFinalRespo
         )
 
         if not matched:
-            logger.info(f"No relevant paragraphs found for rule '{rule.title}'.")
-            results.append(
-                RuleResult(
-                    title=rule.title,
-                    instruction=rule.instruction,
-                    description="No relevant contract paragraphs found.",
-                    paragraphidentifier="",
-                    paragraphcontext="",
-                    similarity_scores=[],
-                )
+            result = RuleResult(
+                title=rule.title,
+                instruction=rule.instruction,
+                description="No relevant contract paragraphs found.",
+                paragraphidentifier="",
+                paragraphcontext="",
+                similarity_scores=[],
             )
-            continue
-
-        para_ids = ",".join(m["paragraph"].paraindetifier for m in matched)
-        para_context = "\n\n".join(f"[{m['paragraph'].paraindetifier}] {m['paragraph'].text.strip()}" for m in matched)
-        similarity_scores = [m["similarity"] for m in matched]
-
-        results.append(
-            RuleResult(
+        else:
+            para_ids = ",".join(m["paragraph"].paraindetifier for m in matched)
+            para_context = "\n\n".join(f"[{m['paragraph'].paraindetifier}] {m['paragraph'].text.strip()}" for m in matched)
+            similarity_scores = [m["similarity"] for m in matched]
+            result = RuleResult(
                 title=rule.title,
                 instruction=rule.instruction,
                 description=rule.description,
@@ -187,35 +216,42 @@ async def review_document(request: RuleCheckRequest) -> PlayBookReviewFinalRespo
                 paragraphcontext=para_context,
                 similarity_scores=similarity_scores,
             )
+
+        # Call LLM for this updated rule
+        context: Dict[str, Any] = {
+            "rule_title": result.title,
+            "rule_instruction": result.instruction,
+            "rule_description": result.description,
+            "paragraphs": result.paragraphcontext,
+        }
+
+        llm_result: PlayBookReviewLLMResponse = await llm_model.generate(
+            prompt=similarity_prompt_template,
+            context=context,
+            response_model=PlayBookReviewLLMResponse,
         )
 
-        # After finding similar paragraphs for each rule, we can call the LLM to review the rule against the paragraphs
-        llm_model = service_container.azure_openai_model
-        llm_results: List[PlayBookReviewResponse] = []
-        for result in results:
-            context: Dict[str, Any] = {
-                "rule_title": result.title,
-                "rule_instruction": result.instruction,
-                "rule_description": result.description,
-                "paragraphs": result.paragraphcontext,
-            }
-
-            llm_result: PlayBookReviewLLMResponse = await llm_model.generate(prompt=similarity_prompt_template, context=context, response_model=PlayBookReviewLLMResponse)
-            response_item = PlayBookReviewResponse(
-                rule_title=result.title,
-                rule_instruction=result.instruction,
-                rule_description=result.description,
-                content=llm_result,
-            )
-            llm_results.append(response_item)
-
-        # We can also call the LLM to find missing clauses based on the combined paragraph context
-        data = " ".join([res.paragraphcontext for res in results])
-        missing_clauses: MissingClausesLLMResponse = await get_missing_clauses(data=data)
-
-        final_response = PlayBookReviewFinalResponse(
-            rules_review=llm_results,
-            missing_clauses=missing_clauses,
+        response_item = PlayBookReviewResponse(
+            rule_title=result.title,
+            rule_instruction=result.instruction,
+            rule_description=result.description,
+            content=llm_result,
         )
 
-    return final_response
+        # Update cached review
+        cached_rules_review[rule.title] = response_item
+
+    # Update missing clauses using all paragraph identifiers in cached rules
+    all_paragraph_data = " ".join(pid for r in cached_rules_review.values() if r.content.para_identifiers for pid in r.content.para_identifiers)
+    missing_clauses: MissingClausesLLMResponse = await get_missing_clauses(data=all_paragraph_data)
+
+    # Save back to session
+    session_data.tool_results[AGENT_NAME] = {
+        "rules_review": list(cached_rules_review.values()),
+        "missing_clauses": missing_clauses,
+    }
+
+    return PlayBookReviewFinalResponse(
+        rules_review=list(cached_rules_review.values()),
+        missing_clauses=missing_clauses,
+    )
