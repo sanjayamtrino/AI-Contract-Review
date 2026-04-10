@@ -800,6 +800,15 @@ async def run(session_id: str, document_a: Document, document_b: Document) -> Co
     doc_text_a = await extract_text(document_a)
     doc_text_b = await extract_text(document_b)
 
+    if hash(doc_text_a) == cached_data.get("doc_1_hash") and hash(doc_text_b) == cached_data.get("doc_2_hash"):
+        logger.info(f"Document hashes match cached data for session {session_id} and agent {AGENT_NAME} — returning cached response")
+        return CompareResponse(
+            success=cached_data.get("success", True),
+            message=cached_data.get("message"),
+            summary=cached_data.get("summary", _zero_changes_summary()),
+            sections=cached_data.get("sections", []),
+        )
+
     # Guard: same document
     if hash(doc_text_a) == hash(doc_text_b):
         return CompareResponse(
@@ -876,6 +885,8 @@ async def run(session_id: str, document_a: Document, document_b: Document) -> Co
 
     # Store data in cache for this session and agent
     session_data.tool_results[AGENT_NAME] = {
+        "doc_1_hash": hash(doc_text_a),
+        "doc_2_hash": hash(doc_text_b),
         "success": True,
         "message": message,
         "summary": summary,

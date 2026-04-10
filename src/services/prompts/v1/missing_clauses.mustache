@@ -1,31 +1,72 @@
-You are a contract review specialist. Analyze the following contract text and identify any missing standard clauses that are typically required for a legally sound and complete agreement.
+You are a contract review specialist.
 
-Contract Text:
+STEP 1 — CLASSIFY THE DOCUMENT
+Read the contract text and identify the document type
+(e.g. Mutual NDA, One-way NDA, MSA, SaaS Agreement, Employment Agreement,
+Consulting Agreement, License Agreement).
+
+STEP 2 — BUILD THE STANDARD CLAUSE CHECKLIST
+List every clause that is standard for the document type you identified.
+You MUST evaluate ALL of them. Do not skip any.
+
+STEP 3 — EVALUATE EACH CLAUSE
+For every clause in your checklist, determine its status in this contract.
+Use the reviewed rules summary below to avoid duplicating findings — but
+you must still assess every clause independently and report its status.
+
+ALREADY REVIEWED TOPICS AND THEIR STATUS:
+{{reviewed_rules_summary}}
+
+Reading the table above:
+- Status "Good"      → covered. Do NOT re-flag. Skip in your output.
+- Status "Medium"    → exists but has a gap. Report the specific uncovered gap
+                       as "incomplete". Do NOT re-flag the whole topic.
+- Status "Low"       → significantly deficient. Report the specific deficiency
+                       as "incomplete".
+- Status "Not Found" → absent in the rules review. Evaluate independently and
+                       flag as "absent" if confirmed.
+- Status "Error"     → treat as unreviewed. Evaluate independently.
+
+CONTRACT TEXT:
 {{data}}
 
-Instructions:
-- Compare the contract against standard legal requirements for this type of agreement
-- Identify clauses that are absent, incomplete, or ambiguous
-- For each missing clause, briefly explain why it is important
+EVALUATION RULES:
+1. You MUST report every clause that is not "Good" in the reviewed rules above
+   AND not fully present in the contract text.
+   There is no scenario where a real contract has zero missing or incomplete
+   clauses. If your checklist produces an empty result, you have made an error —
+   re-evaluate.
+2. ABSENT = zero coverage in the contract for this topic.
+3. INCOMPLETE = a partial clause exists but has a clear, specific gap not
+   already captured by a Medium/Low reviewed rule above.
+4. AMBIGUOUS = clause exists but language is materially unclear or contradictory.
+5. Every finding must cite the paragraph(s) checked and found lacking, or state
+   explicitly "no paragraph addresses this topic."
+6. Do NOT infer clause content beyond what the text states. Do NOT claim a clause
+   covers something unless that specific term appears in the text.
+7. Agreement duration and confidentiality obligation duration are SEPARATE legal
+   constructs. A mismatch between them is NOT a missing clause.
+8. Flag optional clauses (indemnification, liability caps, non-solicitation,
+   warranties) if and only if they are standard for the identified document type
+   AND no paragraph in the contract addresses them at all.
+9. Importance scale:
+   - high   = absence creates material legal risk or unenforceability
+   - medium = absence weakens the agreement but does not void it
+   - low    = absence is a best-practice gap, not a legal risk
 
-Return ONLY a valid JSON object with no additional text, preamble, or markdown formatting, using this exact schema:
+Return ONLY a valid JSON object with no preamble or markdown:
 
 {
+  "document_type": "string",
+  "standard_clauses_for_type": ["string", "..."],
   "missing_clauses": [
     {
       "clause_name": "string",
       "status": "absent" | "incomplete" | "ambiguous",
       "importance": "high" | "medium" | "low",
-      "explanation": "string"
+      "explanation": "string — cite paragraph evidence or state absence explicitly"
     }
   ],
   "total_missing": "integer",
   "summary": "string"
-}
-
-If no standard clauses are missing, return:
-{
-  "missing_clauses": [],
-  "total_missing": 0,
-  "summary": "No significant missing clauses identified."
 }
