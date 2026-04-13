@@ -16,6 +16,7 @@ from src.api.endpoints.doc_information.router import router as doc_information_r
 from src.api.endpoints.ingestion.router import router as ingestion_router
 from src.api.endpoints.orchestrator.router import router as orchestrator_router
 from src.api.endpoints.compare.router import router as compare_router
+from src.api.endpoints.draft.router import router as draft_router
 from src.api.endpoints.missing_clauses.router import router as missing_clauses_router
 from src.api.endpoints.retrieval.router import router as retrieval_router
 from src.api.endpoints.general_review.router import router as general_review_router
@@ -76,6 +77,7 @@ app.include_router(orchestrator_router, prefix="/api/v1/orchesrator")
 app.include_router(doc_information_router, prefix="/api/v1/DocInfo")
 app.include_router(missing_clauses_router, prefix="/api/v1/missing-clauses")
 app.include_router(compare_router, prefix="/api/v1/compare")
+app.include_router(draft_router, prefix="/api/v1/draft")
 app.include_router(general_review_router, prefix="/api/v1/general-review")
 app.include_router(playbook_review_router, prefix="/api/v1/playbook-review")
 
