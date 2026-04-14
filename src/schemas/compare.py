@@ -25,10 +25,8 @@ class ClauseComparisonLLMResponse(BaseModel):
     affected_party: Optional[str] = Field(
         None, description="Which party is affected by this change"
     )
-    old_text: str = Field(description="Exact text from Document A that changed")
-    new_text: str = Field(description="Exact text from Document B that changed")
-    legal_implication: str = Field(
-        description="Brief note on legal meaning of this change"
+    summary: str = Field(
+        description="One concrete sentence describing exactly what changed (e.g. 'Notice period changed from 30 days to 90 days.')"
     )
     is_substantive: bool = Field(
         description="Whether this is a meaningful change vs cosmetic"
@@ -39,14 +37,15 @@ class ChangeEntry(BaseModel):
     """A single change between two document clauses."""
 
     clause_name: str
-    change_type: str  # added, removed, modified, reordered
+    section: Optional[str] = None
+    change_type: str  # added, removed, modified, reordered, unknown
     modification_type: Optional[str] = None
-    risk_level: str  # high, medium, low
+    risk_level: Optional[str] = None  # high, medium, low, or null when unknown
     affected_party: Optional[str] = None
     confidence: str = "high"  # high, medium, low
     text_from_doc_a: Optional[str] = None
     text_from_doc_b: Optional[str] = None
-    legal_implication: Optional[str] = None
+    summary: Optional[str] = None
     is_substantive: bool = True
 
 

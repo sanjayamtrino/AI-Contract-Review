@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from src.agents.compare import run
 from src.schemas.compare import CompareRequest, CompareResponse
 
-router = APIRouter()
+router = APIRouter(tags=["Agents"])
 
 
 @router.post("/diff")
