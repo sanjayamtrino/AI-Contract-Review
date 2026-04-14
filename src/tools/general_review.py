@@ -9,6 +9,7 @@ async def general_review(request: GeneralReviewRequest) -> GeneralReviewResponse
 
     service_container = get_service_container()
     llm_service = service_container.azure_openai_model
+    # faiss_store = service_container.faiss_store
 
     prompt = Path(r"src\services\prompts\v1\general_review.mustache").read_text()
 

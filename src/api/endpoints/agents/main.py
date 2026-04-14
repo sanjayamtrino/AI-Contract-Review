@@ -3,14 +3,19 @@ from typing import Any
 
 from docx import Document
 from fastapi import APIRouter, Depends, Header, UploadFile
+from fastapi.responses import HTMLResponse
 
 from src.api.session_utils import get_session_id
+from src.schemas.contract_analyzer import ContractAnalyzerResponse
 from src.schemas.doc_chat import DocChatResponse
 from src.schemas.general_review import GeneralReviewRequest, GeneralReviewResponse
 from src.schemas.playbook_review import PlayBookReviewFinalResponse, RuleCheckRequest
 from src.tools.comparision import run as compare_documents_service
 from src.tools.doc_chat import query_document as query_document_service
 from src.tools.general_review import general_review as general_review_service
+from src.tools.key_information import (
+    get_key_information_document as key_information_service,
+)
 from src.tools.playbook_review import review_document as playbook_review_service
 
 router = APIRouter(tags=["agents"])
@@ -49,6 +54,17 @@ async def query_document_endpoint(query: str, session_id: str = Depends(get_sess
 
     llm_result = await query_document_service(query=query, session_id=session_id)
     return llm_result
+
+
+@router.post("/contract-analyzer")
+async def contract_analyzer_endpoint(file: UploadFile, session_id: str = Header(..., alias="X-Session-Id")) -> ContractAnalyzerResponse:
+    """Analyze a contract document and extract key information."""
+
+    document = Document(io.BytesIO(await file.read()))
+    document_data = "\n".join([para.text for para in document.paragraphs if para.text.strip() != ""])
+
+    analysis_result: ContractAnalyzerResponse = await key_information_service(content=document_data, session_id=session_id)
+    return analysis_result
 
 
 # @router.post("/generate-nda-headings")

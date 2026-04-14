@@ -4,11 +4,42 @@ from typing import Optional
 from pydantic import BaseModel
 
 from src.dependencies import get_service_container
+from src.schemas.contract_analyzer import ContractAnalyzerResponse
 from src.schemas.tool_schema import KeyInformationToolResponse
 from src.services.llm.azure_openai_model import AzureOpenAIModel
 from src.services.vector_store.manager import get_all_chunks
 
 _llm = AzureOpenAIModel()
+
+AGENT_NAME = "Contract Analyzer"
+
+
+async def get_key_information_document(content: str, session_id: str) -> str:
+    """Extract structured key contract details from the given document content."""
+
+    container = get_service_container()
+    llm_model = container.azure_openai_model
+
+    session_data = container.session_manager.get_session(session_id) if session_id else None
+    if not session_data:
+        return ""
+
+    agent_cache = session_data.tool_results.get(AGENT_NAME, {})
+    if agent_cache:
+        return agent_cache
+
+    prompt_path = Path(r"src\services\prompts\v1\key_information_prompt.mustache").read_text(encoding="utf-8")
+
+    response: str = await llm_model.generate(
+        prompt=prompt_path,
+        context={"contract_text": content},
+        response_model=ContractAnalyzerResponse,
+        mode="JSON",
+    )
+
+    session_data.tool_results[AGENT_NAME] = response
+
+    return response
 
 
 async def get_key_information(session_id: Optional[str] = None, response_format: str = "JSON") -> str | BaseModel:
