@@ -14,7 +14,7 @@ from src.tools.comparision import run as compare_documents_service
 from src.tools.doc_chat import query_document as query_document_service
 from src.tools.general_review import general_review as general_review_service
 from src.tools.key_information import (
-    get_key_information_document as key_information_service,
+    get_key_information_document as contract_analyzer_service,
 )
 from src.tools.playbook_review import review_document as playbook_review_service
 
@@ -63,7 +63,7 @@ async def contract_analyzer_endpoint(file: UploadFile, session_id: str = Header(
     document = Document(io.BytesIO(await file.read()))
     document_data = "\n".join([para.text for para in document.paragraphs if para.text.strip() != ""])
 
-    analysis_result: ContractAnalyzerResponse = await key_information_service(content=document_data, session_id=session_id)
+    analysis_result: ContractAnalyzerResponse = await contract_analyzer_service(content=document_data, session_id=session_id)
     return analysis_result
 
 

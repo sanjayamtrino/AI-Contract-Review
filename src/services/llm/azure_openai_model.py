@@ -97,7 +97,8 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.0,
-                    seed=42,
+                    # seed=42,
+                    max_tokens=15000,
                     response_format={
                         "type": "json_schema",
                         "json_schema": {

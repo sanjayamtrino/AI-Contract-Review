@@ -16,6 +16,7 @@ class TimelineMilestone(BaseModel):
     milestone_name: str = Field(description="Description of the milestone")
     date_or_trigger: str = Field(description="Timeline associated with the milestone")
     description: str = Field(description="Additional details about the milestone")
+    source_clause: str = Field(description="The clause from the contract that this milestone is based on")
 
 
 class RiskComplianceInsight(BaseModel):
