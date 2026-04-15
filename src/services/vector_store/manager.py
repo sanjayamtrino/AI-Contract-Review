@@ -133,6 +133,11 @@ def index_chunks_in_session(session_data: SessionData, chunks: List[Chunk], docu
     # save document record if we have a document id
     if document_id:
         session_data.documents[document_id] = doc_record
+        # Track the most recently ingested document so single-document agents
+        # (e.g. general review Mode 2) can scope to the latest upload instead
+        # of mixing every document the session has accumulated. Multi-document
+        # agents (e.g. compare) ignore this and address documents by id.
+        session_data.metadata["latest_document_id"] = document_id
 
     logger.info(f"Indexed {len(chunks)} chunks in session {session_data.session_id}. " f"Total chunks in session: {len(session_data.chunk_store)}")
 

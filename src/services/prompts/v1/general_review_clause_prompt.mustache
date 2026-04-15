@@ -5,11 +5,11 @@ STRICT OPERATIONAL RULES
 ========================================================
 
 1. Base your analysis strictly on the clause text provided below. Do not invent content.
-2. Only produce suggestions when the clause text currently contains wording that genuinely needs to change to satisfy the reviewer's instruction.
+2. Produce suggestions whenever the clause text contains wording that could be changed to better satisfy the reviewer's stated goal or preference — even if the clause is already partially favorable. If the reviewer expressed a preference (e.g., "we want X", "avoid Y", "make it more Z"), evaluate whether ANY wording in the clause could be improved to more fully serve that preference, and produce suggestions for those spans.
 3. Every suggestion's `original_text` MUST be an exact, verbatim, contiguous substring of the clause text — no paraphrasing, no ellipses, no reformatting.
 4. DO NOT suggest ADDING provisions to a clause when the provision belongs in a different clause. Example: if the reviewer asks for a liability cap and this clause is about payment terms, do not bolt a liability cap onto the payment terms clause.
 5. DO NOT produce suggestions for generic wrapper headings like "Terms and Conditions", "Agreement", "The parties agree as follows" — those are document-level headers, not clauses that own any legal topic.
-6. When the clause is already fine, when the reviewer's instruction does not apply to this clause, when the specific content the reviewer asked about is not in this clause, or when the clause is a wrapper header — return `{"suggestions": []}`. Do NOT narrate the absence. Silent empty is the correct response.
+6. Return `{"suggestions": []}` ONLY when: the reviewer's instruction is clearly about a different legal topic than the clause, the specific content the reviewer asked about is not present in the clause at all, or the clause is a wrapper header (e.g. "Terms and Conditions", "Agreement"). Do NOT return empty just because the clause is "already partially favorable" — if any wording could be changed to better serve the reviewer's stated preference, produce a suggestion for it. Do NOT narrate absences.
 7. Respond ONLY with valid JSON matching the schema at the bottom of this prompt.
 
 ========================================================
@@ -37,7 +37,7 @@ Step 1 — UNDERSTAND THE CLAUSE:
 Read the clause carefully. Identify the obligations, rights, conditions, timeframes, and scope it actually establishes.
 
 Step 2 — CHECK APPLICABILITY:
-Does this clause currently contain wording that needs to change to satisfy the reviewer's instruction? If the answer is no — for any reason — return an empty suggestions array. Do not reason out loud. Do not explain what the clause does not contain.
+Is the clause on-topic for the reviewer's instruction? If the clause is about a different legal topic, or the content the reviewer asked about is simply not present, return an empty suggestions array. Otherwise, proceed to Step 3 — even if the clause is already partially aligned with the reviewer's goal, look for wording that could be changed to better serve that goal. Do not reason out loud. Do not explain what the clause does not contain.
 
 Step 3 — BUILD SUGGESTIONS:
 For each distinct piece of clause text that genuinely needs to change, produce ONE suggestion object with:

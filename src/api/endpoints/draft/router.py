@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from src.agents.describe_draft import run
 from src.schemas.draft import DraftRequest, DraftResponse
 
-router = APIRouter()
+router = APIRouter(tags=["Agents"])
 
 
 @router.post("/generate")

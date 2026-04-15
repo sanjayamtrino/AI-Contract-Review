@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class DraftRequest(BaseModel):
     """Request body for the draft endpoint."""
 
-    session_id: str
+    session_id: Optional[str] = Field(default=None, description="Session ID (optional — omit for standalone drafting)")
     user_prompt: str = Field(description="What the user wants drafted")
 
 
@@ -32,7 +32,7 @@ class DraftLLMResponse(BaseModel):
 class DraftResponse(BaseModel):
     """API response for the draft endpoint."""
 
-    session_id: str
+    session_id: Optional[str] = Field(default=None)
     status: str = Field(default="ok")
     summary: str = Field(
         default="", description="Clean restatement of user's request"

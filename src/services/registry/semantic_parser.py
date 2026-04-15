@@ -45,7 +45,7 @@ _SECTION_LABEL_RE = re.compile(
     r")"
 )
 
-# Regex: inline clause headings like "Audit Rights. " or "No Warranty. "
+# Regex: multi-word inline clause headings like "Audit Rights. " or "No Warranty. "
 _INLINE_CLAUSE_HEADING_RE = re.compile(
     r"(?:^|(?<=\. ))"
     r"((?:[A-Z][a-z]+(?:'[a-z]+)?)"
@@ -55,6 +55,50 @@ _INLINE_CLAUSE_HEADING_RE = re.compile(
     r")+"
     r"\.)\s"
 )
+
+# Regex: single-word clause titles like "Term. ", "Assignment. ", "Definitions. ".
+# Constrained to first word with 4+ total characters to exclude "Mr", "Dr", "Ms",
+# etc., and must be followed by a capital letter so we only match clause-body
+# starts, not mid-sentence capitalization.
+_SINGLE_WORD_HEADING_RE = re.compile(
+    r"(?:^|(?<=\. ))"
+    r"([A-Z][a-z]{3,}(?:'[a-z]+)?\.)"
+    r"\s(?=[A-Z])"
+)
+
+# Words that look like single-word clause titles but are actually sentence
+# adverbs or conjunctions. Anything in this set is ignored when matched by
+# _SINGLE_WORD_HEADING_RE.
+_SINGLE_WORD_HEADING_BLACKLIST = frozenset({
+    "however", "further", "furthermore", "additionally", "moreover",
+    "otherwise", "nevertheless", "notwithstanding", "accordingly",
+    "therefore", "thus", "hence", "thereby", "thereafter", "whereas",
+    "specifically", "particularly", "collectively", "individually",
+    "alternatively", "consequently", "subsequently", "respectively",
+    "conversely", "similarly", "meanwhile", "indeed", "finally",
+    "firstly", "secondly", "thirdly", "lastly", "instead",
+})
+
+
+def _find_clause_heading_matches(text: str) -> List[Dict[str, Any]]:
+    """Return clause-heading matches in paragraph order, deduped by start position.
+
+    Each entry is {"start": int, "end": int, "heading": str} where end points
+    to the first character AFTER the heading (i.e. start of body text).
+    """
+    found: Dict[int, Dict[str, Any]] = {}
+
+    for m in _INLINE_CLAUSE_HEADING_RE.finditer(text):
+        found[m.start()] = {"start": m.start(), "end": m.end(1) + 1, "heading": m.group(1)}
+
+    for m in _SINGLE_WORD_HEADING_RE.finditer(text):
+        word = m.group(1).rstrip(".").lower()
+        if word in _SINGLE_WORD_HEADING_BLACKLIST:
+            continue
+        # Multi-word match at the same position wins — it's more specific.
+        found.setdefault(m.start(), {"start": m.start(), "end": m.end(1) + 1, "heading": m.group(1)})
+
+    return [found[k] for k in sorted(found)]
 
 
 class DocxParser(BaseParser, Logger):
@@ -209,10 +253,12 @@ class DocxParser(BaseParser, Logger):
 
     @staticmethod
     def _split_at_clause_boundaries(paragraphs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Split paragraphs containing multiple inline clause headings.
+        """Split paragraphs at every inline clause heading.
 
-        E.g. "Audit Rights. ... Integration Testing. ..." becomes two
-        separate heading+body paragraph pairs for proper chunking.
+        Detects both multi-word titles (e.g. "Audit Rights.",
+        "Integration Testing.") and single-word titles (e.g. "Term.",
+        "Assignment.", "Definitions.") and splits at every boundary so that
+        each clause later becomes its own chunk.
         """
         result: List[Dict[str, Any]] = []
 
@@ -222,43 +268,51 @@ class DocxParser(BaseParser, Logger):
                 continue
 
             text = para["content"]
-            matches = list(_INLINE_CLAUSE_HEADING_RE.finditer(text))
+            boundaries = _find_clause_heading_matches(text)
 
-            # 0 or 1 match means no split needed
-            if len(matches) <= 1:
+            if not boundaries:
                 result.append(para)
                 continue
 
-            # Split at each heading position
-            segments: List[str] = []
-            prev_start = 0
+            segments: List[Dict[str, Any]] = []
 
-            for match in matches[1:]:
-                segment = text[prev_start:match.start()].strip()
-                if segment:
-                    segments.append(segment)
-                prev_start = match.start()
+            # Text before the first clause heading belongs to the previous
+            # clause; emit as a plain (non-heading) paragraph.
+            if boundaries[0]["start"] > 0:
+                prefix = text[:boundaries[0]["start"]].strip()
+                if prefix:
+                    segments.append({"heading": None, "body": prefix})
 
-            last = text[prev_start:].strip()
-            if last:
-                segments.append(last)
+            # Each clause heading starts a segment that runs to the next
+            # heading (or end of paragraph).
+            for i, b in enumerate(boundaries):
+                body_start = b["end"]
+                body_end = boundaries[i + 1]["start"] if i + 1 < len(boundaries) else len(text)
+                body = text[body_start:body_end].strip()
+                segments.append({"heading": b["heading"], "body": body})
 
-            if not segments:
-                result.append(para)
-                continue
-
-            # Emit each segment as heading + body
             for seg in segments:
-                heading_match = _INLINE_CLAUSE_HEADING_RE.match(seg)
-                if heading_match:
-                    heading_text = heading_match.group(1)
-                    body_text = seg[heading_match.end():].strip()
+                if seg["heading"] is None:
+                    # Prefix of a mid-paragraph heading — belongs to previous clause.
+                    result.append({
+                        "index": para["index"],
+                        "content": seg["body"],
+                        "is_heading": False,
+                    })
+                    continue
 
-                    result.append({"index": para["index"], "content": heading_text, "is_heading": True})
-                    if body_text:
-                        result.append({"index": para["index"], "content": body_text, "is_heading": False, "clause_boundary": True})
-                else:
-                    result.append({"index": para["index"], "content": seg, "is_heading": False})
+                result.append({
+                    "index": para["index"],
+                    "content": seg["heading"],
+                    "is_heading": True,
+                })
+                if seg["body"]:
+                    result.append({
+                        "index": para["index"],
+                        "content": seg["body"],
+                        "is_heading": False,
+                        "clause_boundary": True,
+                    })
 
         return result
 

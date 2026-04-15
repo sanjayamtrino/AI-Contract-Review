@@ -31,7 +31,7 @@ from src.schemas.general_review import (
     RelevanceCheckLLMResponse,
     Suggestion,
 )
-from src.services.clause_extractor import ClauseUnit, extract_all_clauses
+from src.services.clause_extractor import ClauseUnit, extract_all_clauses, extract_clauses
 from src.services.session_manager import SessionData
 
 logger = logging.getLogger(__name__)
@@ -514,7 +514,21 @@ async def full_document_review(
     container = get_service_container()
     embedding_service = container.embedding_service
 
-    clauses = extract_all_clauses(session)
+    # Scope to the most recently ingested document so a session that has
+    # accumulated multiple uploads (e.g. for the compare agent) does not
+    # leak earlier documents' clauses into a general review of the latest
+    # one. Fall back to all clauses if the latest_document_id isn't set
+    # (older sessions ingested before this field existed).
+    latest_document_id = session.metadata.get("latest_document_id")
+    if latest_document_id and latest_document_id in session.documents:
+        clauses = extract_clauses(session, latest_document_id)
+        logger.info(
+            "Scoping full_document_review to latest document '%s' (%d clauses).",
+            latest_document_id, len(clauses),
+        )
+    else:
+        clauses = extract_all_clauses(session)
+
     if not clauses:
         raise ValueError("No clauses could be extracted from the ingested document.")
 

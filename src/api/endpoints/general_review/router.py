@@ -10,7 +10,7 @@ from src.schemas.general_review import GeneralReviewRequest, GeneralReviewRespon
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["General Review"])
+router = APIRouter(tags=["Agents"])
 
 
 @router.post("/review", response_model=GeneralReviewResponse)

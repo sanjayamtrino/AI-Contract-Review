@@ -1,12 +1,14 @@
 """
 Drafter tool -- business logic for the Describe & Draft agent.
 
-Extracts optional document context and similar-clause notes, then calls
-the LLM with a Mustache prompt to generate 3 draft alternatives.
+Enriches draft requests with (1) structured document metadata (parties,
+governing law, contract type), (2) semantically relevant sections from
+the loaded document, and (3) a similar-clause note, then calls the LLM
+with a Mustache prompt to generate 3 draft alternatives.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import numpy as np
 
@@ -14,46 +16,99 @@ from src.dependencies import get_service_container
 from src.schemas.draft import DraftLLMResponse, DraftResponse
 from src.services.clause_extractor import ClauseUnit, extract_all_clauses
 from src.services.prompts.v1 import load_prompt
+from src.tools.key_details import get_key_details
 
 logger = logging.getLogger(__name__)
 
 SIMILAR_CLAUSE_THRESHOLD = 0.60
+RELEVANT_CHUNKS_TOP_K = 5
 
 
-def _extract_document_context(session: Any) -> Optional[dict]:
-    """Gather document context from the first document in the session.
+async def _extract_document_metadata(session_id: str) -> Optional[dict]:
+    """Extract structured document metadata (parties, governing law, type).
 
-    Returns a dict with ``document_excerpt`` or None if unavailable.
+    Returns a dict ready for the prompt or None if unavailable.
     Best-effort: never raises.
     """
     try:
-        documents = getattr(session, "documents", None) or {}
-        if not documents:
+        details = await get_key_details(session_id=session_id)
+    except Exception:
+        logger.warning("Failed to extract document metadata", exc_info=True)
+        return None
+
+    parties_lines: List[str] = []
+    for party in (details.parties or []):
+        name = party.name or "(unnamed)"
+        role = party.role_description or party.role or ""
+        parties_lines.append(f"- {name} ({role})".strip())
+
+    doc_type = ""
+    try:
+        doc_type = details.extraction_metadata.document_type_detected or ""
+    except Exception:
+        pass
+
+    duration_text = ""
+    try:
+        if details.duration and details.duration.raw_text:
+            duration_text = details.duration.raw_text
+    except Exception:
+        pass
+
+    effective_date = ""
+    try:
+        if details.effective_date and details.effective_date.raw_text:
+            effective_date = details.effective_date.raw_text
+    except Exception:
+        pass
+
+    metadata = {
+        "document_type": doc_type,
+        "parties": "\n".join(parties_lines) if parties_lines else "",
+        "duration": duration_text,
+        "effective_date": effective_date,
+    }
+
+    if not any(metadata.values()):
+        return None
+    return metadata
+
+
+async def _get_relevant_sections(
+    session: Any, user_prompt: str
+) -> Optional[str]:
+    """Retrieve semantically relevant chunks from the document for style matching.
+
+    Returns a joined string of top-k relevant sections or None.
+    Best-effort: never raises.
+    """
+    try:
+        container = get_service_container()
+        retrieval_service = container.retrieval_service
+
+        result = await retrieval_service.retrieve_data(
+            query=user_prompt,
+            top_k=RELEVANT_CHUNKS_TOP_K,
+            dynamic_k=False,
+            session_data=session,
+        )
+
+        chunks = result.get("chunks") or []
+        if not chunks:
             return None
 
-        first_doc_id = next(iter(documents))
-        doc_info = documents[first_doc_id]
-        chunk_indices = doc_info.get("chunk_indices", [])
-        if not chunk_indices:
-            return None
-
-        chunk_store = getattr(session, "chunk_store", None) or {}
         texts = []
-        for idx in chunk_indices[:5]:
-            chunk = chunk_store.get(idx)
-            if chunk is None:
-                continue
-            content = (getattr(chunk, "content", None) or "").strip()
+        for chunk in chunks:
+            content = (chunk.get("content") or "").strip()
             if content:
                 texts.append(content)
 
         if not texts:
             return None
 
-        excerpt = "\n\n".join(texts)[:4000]
-        return {"document_excerpt": excerpt}
+        return "\n\n---\n\n".join(texts)[:6000]
     except Exception:
-        logger.warning("Failed to extract document context", exc_info=True)
+        logger.warning("Failed to retrieve relevant sections", exc_info=True)
         return None
 
 
@@ -75,14 +130,12 @@ async def _find_similar_clause(session: Any, user_prompt: str) -> Optional[str]:
         if not prompt_embedding:
             return None
 
-        # Ensure each clause has an embedding
         for clause in clauses:
             if not clause.embedding or len(clause.embedding) == 0:
                 clause.embedding = await embedding_service.generate_embeddings(
                     clause.content
                 )
 
-        # Compute cosine similarity (following compare.py pattern)
         query = np.array(prompt_embedding, dtype=np.float32)
         query_norm = np.linalg.norm(query)
         query = query / max(query_norm, 1e-10)
@@ -114,36 +167,56 @@ async def _find_similar_clause(session: Any, user_prompt: str) -> Optional[str]:
         return None
 
 
-async def generate_drafts(session_id: str, user_prompt: str) -> DraftResponse:
+async def generate_drafts(session_id: Optional[str], user_prompt: str) -> DraftResponse:
     """Generate 3 draft alternatives from a user description.
 
-    Handles: no session, no document, document with context, similar clause
-    found/not found, and LLM failure.
+    When a session with a document is available, enriches the prompt with:
+      * structured document metadata (parties, contract type, duration)
+      * semantically relevant existing sections (for tone/style matching)
+      * a similar-clause note (if a close match already exists)
+
+    Without a session or document, falls back to generic placeholder drafting.
     """
     container = get_service_container()
-    session = container.session_manager.get_session(session_id)
 
-    if session is None:
-        return DraftResponse(
-            session_id=session_id, status="error", error="Session not found"
-        )
+    metadata: Optional[dict] = None
+    relevant_sections: Optional[str] = None
+    similar_clause_note: Optional[str] = None
 
-    # Optional enrichment
-    doc_context = _extract_document_context(session)
-    similar_clause_note = await _find_similar_clause(session, user_prompt)
+    if session_id:
+        session = container.session_manager.get_session(session_id)
+        if session is None:
+            return DraftResponse(
+                session_id=session_id, status="error", error="Session not found"
+            )
 
-    # Build prompt context
+        metadata = await _extract_document_metadata(session_id)
+        relevant_sections = await _get_relevant_sections(session, user_prompt)
+        similar_clause_note = await _find_similar_clause(session, user_prompt)
+
+    has_document_context = metadata is not None or relevant_sections is not None
+
     context = {
         "user_prompt": user_prompt,
-        "has_document_context": doc_context is not None,
+        "has_document_context": has_document_context,
+        "has_metadata": metadata is not None,
+        "has_relevant_sections": relevant_sections is not None,
         "has_similar_clause": similar_clause_note is not None,
     }
-    if doc_context:
-        context["document_excerpt"] = doc_context["document_excerpt"]
+    if metadata:
+        context.update(
+            {
+                "document_type": metadata.get("document_type", ""),
+                "parties": metadata.get("parties", ""),
+                "duration": metadata.get("duration", ""),
+                "effective_date": metadata.get("effective_date", ""),
+            }
+        )
+    if relevant_sections:
+        context["relevant_sections"] = relevant_sections
     if similar_clause_note:
         context["similar_clause_note"] = similar_clause_note
 
-    # Load prompt and call LLM
     prompt = load_prompt("describe_draft_prompt")
     llm_client = container.azure_openai_model
 
@@ -155,7 +228,6 @@ async def generate_drafts(session_id: str, user_prompt: str) -> DraftResponse:
             temperature=0.7,
         )
 
-        # Safety check (Pydantic min_length/max_length should enforce this)
         if len(llm_response.drafts) != 3:
             return DraftResponse(
                 session_id=session_id,
