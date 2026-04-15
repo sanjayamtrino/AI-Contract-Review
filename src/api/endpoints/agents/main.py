@@ -2,8 +2,7 @@ import io
 from typing import Any
 
 from docx import Document
-from fastapi import APIRouter, Depends, Header, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 
 from src.api.session_utils import get_session_id
 from src.schemas.contract_analyzer import ContractAnalyzerResponse
@@ -12,7 +11,7 @@ from src.schemas.general_review import GeneralReviewRequest, GeneralReviewRespon
 from src.schemas.playbook_review import PlayBookReviewFinalResponse, RuleCheckRequest
 from src.tools.comparision import run as compare_documents_service
 from src.tools.doc_chat import query_document as query_document_service
-from src.tools.general_review import general_review as general_review_service
+from src.tools.general_review import clause_review, full_document_review
 from src.tools.key_information import (
     get_key_information_document as contract_analyzer_service,
 )
@@ -40,20 +39,35 @@ async def playbook_review_endpoint(request: RuleCheckRequest, session_id: str = 
     return review_result
 
 
+# @router.post("/general-review", response_model=GeneralReviewResponse)
+# async def general_review_endpoint(request: GeneralReviewRequest) -> GeneralReviewResponse:
+#     """Run general-purpose rule-based review."""
+
+#     review_result = await general_review_service(request)
+#     return review_result
+
+
 @router.post("/general-review", response_model=GeneralReviewResponse)
-async def general_review_endpoint(request: GeneralReviewRequest) -> GeneralReviewResponse:
-    """Run general-purpose rule-based review."""
+async def review_contract(request: GeneralReviewRequest, session_id: str = Depends(get_session_id)) -> GeneralReviewResponse:
+    """Run the general review agent against an ingested document."""
+    try:
+        if request.selected_clause and request.selected_clause.strip():
+            return await clause_review(
+                session_id=session_id,
+                clause_text=request.selected_clause,
+                user_prompt=request.prompt,
+                clause_title=(request.clause_title or "Selected Clause").strip() or "Selected Clause",
+            )
 
-    review_result = await general_review_service(request)
-    return review_result
+        return await full_document_review(
+            session_id=session_id,
+            user_prompt=request.prompt,
+        )
 
-
-@router.post("/query-document", response_model=DocChatResponse)
-async def query_document_endpoint(query: str, session_id: str = Depends(get_session_id)) -> DocChatResponse:
-    """Query the document chunks based on the given query and session ID."""
-
-    llm_result = await query_document_service(query=query, session_id=session_id)
-    return llm_result
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"General review error: {str(err)}")
 
 
 @router.post("/contract-analyzer")
@@ -65,6 +79,14 @@ async def contract_analyzer_endpoint(file: UploadFile, session_id: str = Header(
 
     analysis_result: ContractAnalyzerResponse = await contract_analyzer_service(content=document_data, session_id=session_id)
     return analysis_result
+
+
+@router.post("/query-document", response_model=DocChatResponse)
+async def query_document_endpoint(query: str, session_id: str = Depends(get_session_id)) -> DocChatResponse:
+    """Query the document chunks based on the given query and session ID."""
+
+    llm_result = await query_document_service(query=query, session_id=session_id)
+    return llm_result
 
 
 # @router.post("/generate-nda-headings")
