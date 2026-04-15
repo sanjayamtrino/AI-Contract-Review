@@ -12,6 +12,7 @@ class ClauseUnit(BaseModel):
     position: int = Field(..., description="The position of this clause in the original document (e.g., clause number or order index)")
     doc_order: int = Field(0, description="The order of this clause in the document, used for reordering detection")
     embedding: List[float] = Field(default_factory=list)
+    section_heading: Optional[str] = None
 
 
 class MatchResult(BaseModel):
@@ -52,11 +53,11 @@ class ClauseComparisonLLMResponse(BaseModel):
     """Structured output schema for the per-pair LLM comparison call."""
 
     change_type: ChangeType = Field(description="One of: added, removed, modified, reordered")
-    change_summary: str = Field(description="Brief one-sentence summary of what changed between the two versions")
+    modification_type: Optional[str] = Field(None, description="Sub-type: value, language, scope, structural, rewritten")
+    summary: str = Field(description="Brief one-sentence summary of what changed between the two versions")
     risk_level: RiskLevel = Field(description="One of: high, medium, low")
-    risk_impact: str = Field(description="Brief explanation of how this change affects the parties legally or commercially")
-    original_text: str = Field(description="Exact text from Document A that changed")
-    revised_text: str = Field(description="Exact text from Document B that changed")
+    affected_party: Optional[str] = Field(None, description="Which party is affected by this change")
+    is_substantive: bool = Field(description="Whether this is a meaningful change vs cosmetic")
 
 
 # class ChangeEntry(BaseModel):
@@ -77,13 +78,17 @@ class ClauseComparisonLLMResponse(BaseModel):
 class ChangeEntry(BaseModel):
     """A single change between two document clauses."""
 
-    clause_title: str
-    change_summary: Optional[str] = None
-    change_type: ChangeType
-    risk_level: RiskLevel
-    risk_impact: Optional[str] = None
-    original_text: Optional[str] = None
-    revised_text: Optional[str] = None
+    clause_name: str
+    section: Optional[str] = None
+    change_type: str
+    modification_type: Optional[str] = None
+    risk_level: Optional[str] = None
+    affected_party: Optional[str] = None
+    confidence: str = "high"
+    text_from_doc_a: Optional[str] = None
+    text_from_doc_b: Optional[str] = None
+    summary: Optional[str] = None
+    is_substantive: bool = True
 
 
 class SectionGroup(BaseModel):

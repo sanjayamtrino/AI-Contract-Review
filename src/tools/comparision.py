@@ -1,3 +1,4 @@
+import asyncio
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -19,15 +20,8 @@ from src.schemas.comparision import (
 from src.schemas.registry import ParseResult
 from src.services.registry.registry import ParserRegistry
 
-# Similarity thresholds
-SIMILARITY_THRESHOLD = 0.78
-IDENTICAL_THRESHOLD = 0.98
-SPLIT_MERGE_THRESHOLD = 0.85
-MAX_LLM_CALLS = 50
-
 AGENT_NAME = "document_comparison_agent"
 
-logger = Logger().logger
 registry = None
 
 
@@ -48,68 +42,67 @@ def get_parser():
     return parser
 
 
-# --- Stage 1: Clause Extraction ---
+# Similarity thresholds
+SIMILARITY_THRESHOLD = 0.72
+SPLIT_MERGE_THRESHOLD = 0.75
+MAX_LLM_CALLS = 50
+MAX_LLM_CONCURRENCY = 5
+CONFIDENCE_HIGH = 0.90
+CONFIDENCE_MEDIUM = 0.80
+REORDER_DRIFT_THRESHOLD = 0.15
+CONTAINMENT_SIZE_RATIO = 1.3
+
+logger = Logger().logger
+
+
+_GENERIC_HEADINGS = {
+    "terms and conditions",
+    "agreement",
+    "general",
+    "general terms",
+    "miscellaneous",
+    "preamble",
+    "recitals",
+    "background",
+}
 
 
 def _extract_heading_fallback(content: str) -> Optional[str]:
-    """Derive heading from first line when metadata lacks section_heading."""
+    """Derive a clause-specific heading from the content itself."""
 
-    first_line = content.strip().split("\n")[0].strip()
+    stripped = content.strip()
+    first_line = stripped.split("\n")[0].strip()
+
     if re.match(r"^(\d+\.[\d.]*\s|Section\s|ARTICLE\s|[A-Z][A-Z\s]{4,}$)", first_line):
         return first_line
 
-    # ALL CAPS heading on its own line
-    if re.match(r"^[A-Z][A-Z\s]{4,}$", first_line):
-        return first_line
-
-    # Title-case phrase before first ". " — e.g. "Audit Rights. Content..."
-    m = re.match(r"^([A-Z][A-Za-z\s/&,-]{2,60})\.\s", first_line)
-    if m:
-        candidate = m.group(1).strip()
-        _FUNCTION_WORDS = {
-            "the",
-            "a",
-            "an",
-            "is",
-            "are",
-            "this",
-            "that",
-            "these",
-            "those",
-            "and",
-            "or",
-            "if",
-            "but",
-            "for",
-            "it",
-            "we",
-            "you",
-            "he",
-            "she",
-            "they",
-            "all",
-            "any",
-            "each",
-            "please",
-            "however",
-            "furthermore",
-            "moreover",
-            "also",
-            "in",
-            "on",
-            "at",
-            "to",
-            "of",
-            "by",
-            "with",
-            "from",
-        }
-        words = candidate.lower().split()
-        content_words = [w for w in words if w not in _FUNCTION_WORDS]
-        if len(content_words) >= 1 and len(words) <= 8:
-            return candidate
+    title_match = re.match(r"^([A-Z][A-Za-z0-9&\s/',\-]{1,60}?)\.\s+[A-Z]", stripped)
+    if title_match:
+        title = title_match.group(1).strip()
+        word_count = len(title.split())
+        if 1 <= word_count <= 8:
+            return title
 
     return None
+
+
+def _is_generic_heading(heading: Optional[str]) -> bool:
+    """Check if a heading is too generic to be useful for matching."""
+
+    if not heading:
+        return True
+    return heading.strip().lower() in _GENERIC_HEADINGS
+
+
+def _resolve_clause_heading(content: str, metadata_heading: Optional[str]) -> Optional[str]:
+    """Prefer a content-derived per-clause title over a generic metadata heading."""
+
+    derived = _extract_heading_fallback(content)
+    if derived:
+        return derived
+    if _is_generic_heading(metadata_heading):
+        return metadata_heading
+    return metadata_heading
 
 
 def extract_clauses(document: ParseResult) -> List[ClauseUnit]:
@@ -143,32 +136,6 @@ def extract_clauses(document: ParseResult) -> List[ClauseUnit]:
     return clauses
 
 
-# --- Stage 2: Clause Matching ---
-
-
-def _normalize_heading(heading: str) -> str:
-    """Normalize heading for matching — strips numbering, normalizes symbols."""
-    h = heading.strip().lower()
-    h = re.sub(r"^\d+[\.\)\-:\s]+", "", h)
-    h = re.sub(r"^(section|article)\s+\d+[\.\s]*", "", h, flags=re.IGNORECASE)
-    h = re.sub(r"\s*&\s*", " and ", h)
-    h = re.sub(r"[^\w\s]", "", h)
-    h = re.sub(r"\s+", " ", h).strip()
-    return h
-
-
-def _normalize_content(text: str) -> str:
-    """Normalize text for comparison — collapse whitespace variations."""
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n\s*\n", "\n\n", text)
-    return text.strip()
-
-
-def _normalize_for_containment(text: str) -> str:
-    """Collapse whitespace for robust substring containment checks."""
-    return " ".join(text.split()).lower()
-
-
 def _compute_similarity_matrix(emb_a: np.ndarray, emb_b: np.ndarray) -> np.ndarray:
     """Cosine similarity matrix between two embedding sets."""
 
@@ -185,6 +152,16 @@ def _cosine_similarity(emb_a: List[float], emb_b: List[float]) -> float:
     a = np.array(emb_a, dtype=np.float32).reshape(1, -1)
     b = np.array(emb_b, dtype=np.float32).reshape(1, -1)
     return float(_compute_similarity_matrix(a, b)[0][0])
+
+
+def _confidence_from_similarity(score: float) -> str:
+    """Bucket a cosine-similarity score into a confidence label."""
+
+    if score >= CONFIDENCE_HIGH:
+        return "high"
+    if score >= CONFIDENCE_MEDIUM:
+        return "medium"
+    return "low"
 
 
 def _greedy_match(sim_matrix: np.ndarray, threshold: float = SIMILARITY_THRESHOLD) -> Tuple[List[Tuple[int, int, float]], List[int], List[int]]:
@@ -213,24 +190,26 @@ def _greedy_match(sim_matrix: np.ndarray, threshold: float = SIMILARITY_THRESHOL
 
 
 async def _ensure_embeddings(clauses_a: List[ClauseUnit], clauses_b: List[ClauseUnit], indices_a: List[int], indices_b: List[int], embedding_service) -> None:
-    """Generate embeddings for clauses that don't have them yet."""
+    """Generate embeddings in parallel for clauses that don't have them yet."""
 
+    targets: List[ClauseUnit] = []
     for idx in indices_a:
-        if not clauses_a[idx].embedding or len(clauses_a[idx].embedding) == 0:
-            emb = await embedding_service.generate_embeddings(clauses_a[idx].content)
-            if not emb:
-                raise ValueError(f"Failed to generate embedding for clause A[{idx}]")
-            clauses_a[idx].embedding = emb
+        if not clauses_a[idx].embedding:
+            targets.append(clauses_a[idx])
     for idx in indices_b:
-        if not clauses_b[idx].embedding or len(clauses_b[idx].embedding) == 0:
-            emb = await embedding_service.generate_embeddings(clauses_b[idx].content)
-            if not emb:
-                raise ValueError(f"Failed to generate embedding for clause B[{idx}]")
-            clauses_b[idx].embedding = emb
+        if not clauses_b[idx].embedding:
+            targets.append(clauses_b[idx])
+
+    if not targets:
+        return
+
+    results = await asyncio.gather(*(embedding_service.generate_embeddings(c.content) for c in targets))
+    for clause, embedding in zip(targets, results):
+        clause.embedding = embedding
 
 
 async def match_clauses(clauses_a: List[ClauseUnit], clauses_b: List[ClauseUnit], embedding_service) -> MatchResult:
-    """Match clauses between two documents using a combination of heading-based and embedding-based similarity."""
+    """Match clauses between two versions using a hybrid of heading-based and embedding similarity."""
 
     n = len(clauses_a)
     m = len(clauses_b)
@@ -243,16 +222,14 @@ async def match_clauses(clauses_a: List[ClauseUnit], clauses_b: List[ClauseUnit]
     heading_map_a: Dict[str, List[int]] = {}
     for i, clause in enumerate(clauses_a):
         if clause.heading:
-            key = _normalize_heading(clause.heading)
-            if key:
-                heading_map_a.setdefault(key, []).append(i)
+            key = clause.heading.strip().lower()
+            heading_map_a.setdefault(key, []).append(i)
 
     heading_map_b: Dict[str, List[int]] = {}
     for j, clause in enumerate(clauses_b):
         if clause.heading:
-            key = _normalize_heading(clause.heading)
-            if key:
-                heading_map_b.setdefault(key, []).append(j)
+            key = clause.heading.strip().lower()
+            heading_map_b.setdefault(key, []).append(j)
 
     heading_matched_indices: List[Tuple[int, int]] = []
 
@@ -263,13 +240,18 @@ async def match_clauses(clauses_a: List[ClauseUnit], clauses_b: List[ClauseUnit]
             heading_matched_indices.append((i, j))
             used_a.add(i)
             used_b.add(j)
+            logger.debug(f"Heading match: '{key}' -> A[{i}] <-> B[{j}]")
 
+    # Generate embeddings for all clauses
     await _ensure_embeddings(clauses_a, clauses_b, list(range(n)), list(range(m)), embedding_service)
 
+    # Compute content similarity for heading-matched pairs
     for i, j in heading_matched_indices:
         sim = _cosine_similarity(clauses_a[i].embedding, clauses_b[j].embedding)
         heading_pairs.append((i, j, sim))
+        logger.info(f"Heading match: '{clauses_a[i].heading}' — similarity: {sim:.4f}")
 
+    # Step 2: embedding similarity for remaining clauses
     remaining_a = [i for i in range(n) if i not in used_a]
     remaining_b = [j for j in range(m) if j not in used_b]
 
@@ -301,86 +283,90 @@ async def match_clauses(clauses_a: List[ClauseUnit], clauses_b: List[ClauseUnit]
 # --- Stage 2.5: Split/Merge Detection ---
 
 
-def _headings_compatible(heading_a: Optional[str], heading_b: Optional[str]) -> bool:
-    """Check if two headings are compatible for split/merge matching."""
-    if heading_a is None and heading_b is None:
-        return True
-    if heading_a is None or heading_b is None:
-        return True
-
-    _STOP_WORDS = {"and", "or", "the", "a", "an", "of", "to", "in", "for", "on", "by", "with"}
-    norm_a = set(_normalize_heading(heading_a).split()) - _STOP_WORDS
-    norm_b = set(_normalize_heading(heading_b).split()) - _STOP_WORDS
-
-    if not norm_a or not norm_b:
-        return False
-
-    overlap = norm_a & norm_b
-    shorter = min(len(norm_a), len(norm_b))
-    return len(overlap) >= max(1, shorter * 0.5)
-
-
 def _detect_splits_and_merges(match_result: MatchResult, clauses_a: List[ClauseUnit], clauses_b: List[ClauseUnit]) -> Tuple[List[ChangeEntry], List[int], List[int]]:
-    """Detect splits (1 A -> many B) and merges (many A -> 1 B) among unmatched clauses."""
+    """Identify cases where unmatched clauses on one side are highly similar to matched clauses on the other side, indicating a possible split or merge."""
 
     entries: List[ChangeEntry] = []
     explained_a: set = set()
     explained_b: set = set()
 
-    matched_a_indices = {idx_a for idx_a, _, _ in match_result.matched_pairs}
-    matched_b_indices = {idx_b for _, idx_b, _ in match_result.matched_pairs}
+    matched_a_indices = sorted({idx_a for idx_a, _, _ in match_result.matched_pairs})
+    matched_b_indices = sorted({idx_b for _, idx_b, _ in match_result.matched_pairs})
 
-    for j in match_result.unmatched_b:
-        best_sim, best_a_idx = 0.0, -1
-        for idx_a in matched_a_indices:
-            if not _headings_compatible(clauses_a[idx_a].heading, clauses_b[j].heading):
+    # --- Splits: unmatched B compared against matched A ---
+    if match_result.unmatched_b and matched_a_indices:
+        emb_matched_a = np.array([clauses_a[i].embedding for i in matched_a_indices], dtype=np.float32)
+        emb_unmatched_b = np.array([clauses_b[j].embedding for j in match_result.unmatched_b], dtype=np.float32)
+        sim = _compute_similarity_matrix(emb_unmatched_b, emb_matched_a)  # (|Bu|, |Am|)
+
+        # Rank (unmatched_b row, matched_a col) pairs by similarity, highest first
+        flat = [(float(sim[r, c]), r, c) for r in range(sim.shape[0]) for c in range(sim.shape[1])]
+        flat.sort(reverse=True)
+
+        used_a: set = set()
+        for score, r, c in flat:
+            if score < SPLIT_MERGE_THRESHOLD:
+                break
+            j = match_result.unmatched_b[r]
+            idx_a = matched_a_indices[c]
+            if j in explained_b or idx_a in used_a:
                 continue
-            sim = _cosine_similarity(clauses_a[idx_a].embedding, clauses_b[j].embedding)
-            if sim > best_sim:
-                best_sim, best_a_idx = sim, idx_a
-
-        if best_sim >= SPLIT_MERGE_THRESHOLD and best_a_idx >= 0:
-            matched_a = clauses_a[best_a_idx]
-            unmatched_b = clauses_b[j]
-            title = matched_a.heading or unmatched_b.heading or f"Clause at position {matched_a.doc_order + 1}"
+            clause_a, clause_b = clauses_a[idx_a], clauses_b[j]
             entries.append(
                 ChangeEntry(
-                    clause_title=title,
+                    clause_name=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+                    section=clause_a.section_heading or clause_b.section_heading,
                     change_type="modified",
-                    change_summary="Clause split into multiple clauses. Content preserved but restructured.",
+                    modification_type="structural",
                     risk_level="low",
-                    risk_impact="Low risk — structural reorganisation only, no substantive change.",
-                    original_text=matched_a.content,
-                    revised_text=unmatched_b.content,
+                    affected_party="Both",
+                    confidence=_confidence_from_similarity(score),
+                    text_from_doc_a=clause_a.content,
+                    text_from_doc_b=clause_b.content,
+                    summary="Clause was split into multiple clauses in the revised version. Wording preserved.",
+                    is_substantive=False,
                 )
             )
             explained_b.add(j)
+            used_a.add(idx_a)
+            logger.info(f"Split detected: A[{idx_a}] -> B[{j}] (sim={score:.4f})")
 
-    for i in match_result.unmatched_a:
-        best_sim, best_b_idx = 0.0, -1
-        for idx_b in matched_b_indices:
-            if not _headings_compatible(clauses_a[i].heading, clauses_b[idx_b].heading):
+    # --- Merges: unmatched A compared against matched B ---
+    if match_result.unmatched_a and matched_b_indices:
+        emb_matched_b = np.array([clauses_b[j].embedding for j in matched_b_indices], dtype=np.float32)
+        emb_unmatched_a = np.array([clauses_a[i].embedding for i in match_result.unmatched_a], dtype=np.float32)
+        sim = _compute_similarity_matrix(emb_unmatched_a, emb_matched_b)  # (|Au|, |Bm|)
+
+        flat = [(float(sim[r, c]), r, c) for r in range(sim.shape[0]) for c in range(sim.shape[1])]
+        flat.sort(reverse=True)
+
+        used_b: set = set()
+        for score, r, c in flat:
+            if score < SPLIT_MERGE_THRESHOLD:
+                break
+            i = match_result.unmatched_a[r]
+            idx_b = matched_b_indices[c]
+            if i in explained_a or idx_b in used_b:
                 continue
-            sim = _cosine_similarity(clauses_a[i].embedding, clauses_b[idx_b].embedding)
-            if sim > best_sim:
-                best_sim, best_b_idx = sim, idx_b
-
-        if best_sim >= SPLIT_MERGE_THRESHOLD and best_b_idx >= 0:
-            unmatched_a = clauses_a[i]
-            matched_b = clauses_b[best_b_idx]
-            title = matched_b.heading or unmatched_a.heading or f"Clause at position {unmatched_a.doc_order + 1}"
+            clause_a, clause_b = clauses_a[i], clauses_b[idx_b]
             entries.append(
                 ChangeEntry(
-                    clause_title=title,
+                    clause_name=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+                    section=clause_a.section_heading or clause_b.section_heading,
                     change_type="modified",
-                    change_summary="Clause merged with another clause. Content preserved but combined.",
+                    modification_type="structural",
                     risk_level="low",
-                    risk_impact="Low risk — structural reorganisation only, no substantive change.",
-                    original_text=unmatched_a.content,
-                    revised_text=matched_b.content,
+                    affected_party="Both",
+                    confidence=_confidence_from_similarity(score),
+                    text_from_doc_a=clause_a.content,
+                    text_from_doc_b=clause_b.content,
+                    summary="Clause was merged with another clause in the revised version. Wording preserved.",
+                    is_substantive=False,
                 )
             )
             explained_a.add(i)
+            used_b.add(idx_b)
+            logger.info(f"Merge detected: A[{i}] -> B[{idx_b}] (sim={score:.4f})")
 
     remaining_a = [i for i in match_result.unmatched_a if i not in explained_a]
     remaining_b = [j for j in match_result.unmatched_b if j not in explained_b]
@@ -388,17 +374,14 @@ def _detect_splits_and_merges(match_result: MatchResult, clauses_a: List[ClauseU
     return entries, remaining_a, remaining_b
 
 
-# --- Stage 2.75: Containment Reconciliation ---
+def _normalize_for_containment(text: str) -> str:
+    """Collapse whitespace for robust substring containment checks."""
 
-
-# def _normalize_for_containment(text: str) -> str:
-#     """Collapse whitespace for robust substring containment checks."""
-
-#     return " ".join(text.split()).lower()
+    return " ".join(text.split()).lower()
 
 
 def _reconcile_containment(unmatched_a: List[int], unmatched_b: List[int], clauses_a: List[ClauseUnit], clauses_b: List[ClauseUnit]) -> Tuple[List[ChangeEntry], List[int], List[int]]:
-    """Detect cases where an unmatched clause from one document is fully contained within an unmatched clause from the other document, indicating an addition or removal rather than a modification. Returns new change entries and updated unmatched lists."""
+    """Detect cases where an unmatched clause on one side is mostly contained within an unmatched clause on the other side, indicating a possible addition or removal of content rather than a true new/deleted clause."""
 
     entries: List[ChangeEntry] = []
     explained_a: set = set()
@@ -419,12 +402,17 @@ def _reconcile_containment(unmatched_a: List[int], unmatched_b: List[int], claus
                 clause_a, clause_b = clauses_a[i], clauses_b[j]
                 entries.append(
                     ChangeEntry(
-                        clause_title=clause_b.heading or clause_a.heading or f"Clause at position {clause_b.doc_order + 1}",
+                        clause_name=clause_b.heading or clause_a.heading or f"Clause at position {clause_b.doc_order + 1}",
+                        section=clause_b.section_heading or clause_a.section_heading,
                         change_type="added",
-                        change_summary="New content added alongside existing clause text in Document B.",
+                        modification_type="structural",
                         risk_level="medium",
-                        risk_impact="New clause language introduced — review for additional obligations or rights.",
-                        revised_text=clause_b.content,
+                        affected_party=None,
+                        confidence="high",
+                        text_from_doc_a=None,
+                        text_from_doc_b=clause_b.content,
+                        summary="New content was appended alongside the existing clause text in the revised version.",
+                        is_substantive=True,
                     )
                 )
                 explained_a.add(i)
@@ -449,12 +437,17 @@ def _reconcile_containment(unmatched_a: List[int], unmatched_b: List[int], claus
                 clause_a, clause_b = clauses_a[i], clauses_b[j]
                 entries.append(
                     ChangeEntry(
-                        clause_title=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+                        clause_name=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+                        section=clause_a.section_heading or clause_b.section_heading,
                         change_type="removed",
-                        change_summary="Content removed from this clause in Document B.",
+                        modification_type="structural",
                         risk_level="medium",
-                        risk_impact="Clause content trimmed — verify no obligations or protections were lost.",
-                        original_text=clause_a.content,
+                        affected_party=None,
+                        confidence="high",
+                        text_from_doc_a=clause_a.content,
+                        text_from_doc_b=None,
+                        summary="Content was trimmed from this clause in the revised version.",
+                        is_substantive=True,
                     )
                 )
                 explained_a.add(i)
@@ -468,77 +461,100 @@ def _reconcile_containment(unmatched_a: List[int], unmatched_b: List[int], claus
     return entries, remaining_a, remaining_b
 
 
-# --- Stage 3: Per-Pair LLM Comparison ---
+def _derive_delta_heading(longer: ClauseUnit, shorter: ClauseUnit, shared_text: str) -> Optional[str]:
+    """Try to derive a more specific heading for a split/merge delta by looking for a title in the longer clause's content that matches the shared text, rather than relying on the original metadata heading which may be generic or missing."""
 
-_MODAL_VERBS = {"may", "shall", "will", "must", "can", "agree", "agrees", "agreed"}
-
-
-def _detect_negation_flips(text_a: str, text_b: str) -> List[str]:
-    """Detect critical negation changes between two texts."""
-    words_a = text_a.lower().split()
-    words_b = text_b.lower().split()
-    flips: List[str] = []
-
-    def _find_negated_modals(words: List[str]) -> Tuple[set, set]:
-        negated = set()
-        bare = set()
-        for i, w in enumerate(words):
-            if w in _MODAL_VERBS:
-                if i + 1 < len(words) and words[i + 1] == "not":
-                    negated.add(w)
-                else:
-                    bare.add(w)
-            if w == "do" and i + 1 < len(words) and words[i + 1] == "not":
-                if i + 2 < len(words):
-                    negated.add(words[i + 2])
-        return negated, bare
-
-    neg_a, bare_a = _find_negated_modals(words_a)
-    neg_b, bare_b = _find_negated_modals(words_b)
-
-    for verb in neg_a & bare_b:
-        if verb not in neg_b:
-            flips.append(f'Negation removed: "{verb} not" → "{verb}"')
-
-    for verb in bare_a & neg_b:
-        if verb not in neg_a:
-            flips.append(f'Negation added: "{verb}" → "{verb} not"')
-
-    _PREFIX_PAIRS = [
-        ("agree", "disagree"),
-        ("agrees", "disagrees"),
-        ("authorized", "unauthorized"),
-        ("lawful", "unlawful"),
-        ("limited", "unlimited"),
-        ("reasonable", "unreasonable"),
-    ]
-    words_a_set = set(words_a)
-    words_b_set = set(words_b)
-    for pos, neg in _PREFIX_PAIRS:
-        if pos in words_a_set and neg in words_b_set:
-            flips.append(f'Polarity flip: "{pos}" → "{neg}"')
-        elif neg in words_a_set and pos in words_b_set:
-            flips.append(f'Polarity flip: "{neg}" → "{pos}"')
-
-    return flips
+    stripped = longer.content.strip()
+    shared_norm = " ".join(shared_text.split()).lower()
+    lower = stripped.lower()
+    pos = lower.find(shared_norm[:40]) if shared_norm else -1
+    if pos > 0:
+        delta = stripped[:pos].strip()
+        derived = _extract_heading_fallback(delta)
+        if derived:
+            return derived
+    derived = _extract_heading_fallback(stripped)
+    if derived and derived != shorter.heading:
+        return derived
+    return longer.heading or shorter.heading
 
 
-async def _compare_single_pair(clause_a: ClauseUnit, clause_b: ClauseUnit, llm_client, restructure_note: str = "", negation_flips: Optional[List[str]] = None) -> ClauseComparisonLLMResponse:
+def _reconcile_matched_containment(pairs: List[Tuple[int, int, float]], clauses_a: List[ClauseUnit], clauses_b: List[ClauseUnit]) -> Tuple[List[Tuple[int, int, float]], List[ChangeEntry]]:
+    """For matched pairs with moderate similarity, check if one clause's text is mostly contained within the other, which may indicate an addition or removal of content rather than a true modification. Emit a corresponding ChangeEntry and remove from LLM comparison."""
+
+    remaining: List[Tuple[int, int, float]] = []
+    entries: List[ChangeEntry] = []
+
+    for idx_a, idx_b, score in pairs:
+        clause_a = clauses_a[idx_a]
+        clause_b = clauses_b[idx_b]
+        norm_a = _normalize_for_containment(clause_a.content)
+        norm_b = _normalize_for_containment(clause_b.content)
+
+        if len(norm_a) < 20 or len(norm_b) < 20:
+            remaining.append((idx_a, idx_b, score))
+            continue
+
+        if norm_a in norm_b and len(norm_b) >= len(norm_a) * CONTAINMENT_SIZE_RATIO:
+            shared_is_identical = clause_a.content.strip() in clause_b.content
+            heading = _derive_delta_heading(clause_b, clause_a, clause_a.content)
+            entries.append(
+                ChangeEntry(
+                    clause_name=heading or f"Clause at position {clause_b.doc_order + 1}",
+                    section=clause_b.section_heading or clause_a.section_heading,
+                    change_type="added",
+                    modification_type="structural",
+                    risk_level="medium",
+                    affected_party=None,
+                    confidence="high",
+                    text_from_doc_a=None,
+                    text_from_doc_b=clause_b.content,
+                    summary="A new clause was added alongside existing text in the revised version.",
+                    is_substantive=True,
+                )
+            )
+            logger.info(f"Matched-pair containment: A[{idx_a}] inside B[{idx_b}] — " f"emitting addition; shared_identical={shared_is_identical}")
+            if not shared_is_identical:
+                # Shared portion has cosmetic/word-level differences too — LLM still runs.
+                remaining.append((idx_a, idx_b, score))
+            continue
+
+        if norm_b in norm_a and len(norm_a) >= len(norm_b) * CONTAINMENT_SIZE_RATIO:
+            shared_is_identical = clause_b.content.strip() in clause_a.content
+            heading = _derive_delta_heading(clause_a, clause_b, clause_b.content)
+            entries.append(
+                ChangeEntry(
+                    clause_name=heading or f"Clause at position {clause_a.doc_order + 1}",
+                    section=clause_a.section_heading or clause_b.section_heading,
+                    change_type="removed",
+                    modification_type="structural",
+                    risk_level="medium",
+                    affected_party=None,
+                    confidence="high",
+                    text_from_doc_a=clause_a.content,
+                    text_from_doc_b=None,
+                    summary="Clause content was removed from the revised version.",
+                    is_substantive=True,
+                )
+            )
+            logger.info(f"Matched-pair containment: B[{idx_b}] inside A[{idx_a}] — " f"emitting removal; shared_identical={shared_is_identical}")
+            if not shared_is_identical:
+                remaining.append((idx_a, idx_b, score))
+            continue
+
+        remaining.append((idx_a, idx_b, score))
+
+    return remaining, entries
+
+
+async def _compare_single_pair(clause_a: ClauseUnit, clause_b: ClauseUnit, llm_client) -> ClauseComparisonLLMResponse:
     """Send one clause pair to the LLM for detailed comparison."""
 
-    prompt = Path(r"src\services\prompts\v1\clause_comparison_prompt.mustache").read_text(encoding="utf-8")
-    text_a = clause_a.content
-    notes: List[str] = []
-    if restructure_note:
-        notes.append(restructure_note)
-    if negation_flips:
-        flip_list = "; ".join(negation_flips)
-        notes.append(f"CRITICAL negation changes detected: {flip_list}. " "These MUST be reported as high risk. Do NOT classify them as low risk or typographical.")
-    if notes:
-        text_a += "\n\n[NOTE: " + " ".join(notes) + "]"
+    prompt = Path(r"src\services\prompts\v1\clause_comparison_prompt.mustache").read_text()
+
     context = {
         "clause_heading": clause_a.heading or clause_b.heading or "Unnamed Clause",
-        "clause_a_text": text_a,
+        "clause_a_text": clause_a.content,
         "clause_b_text": clause_b.content,
     }
     return await llm_client.generate(
@@ -548,125 +564,123 @@ async def _compare_single_pair(clause_a: ClauseUnit, clause_b: ClauseUnit, llm_c
     )
 
 
-def _build_change_entry(clause_a: ClauseUnit, clause_b: ClauseUnit, comparison: ClauseComparisonLLMResponse) -> ChangeEntry:
+def _build_change_entry(clause_a: ClauseUnit, clause_b: ClauseUnit, comparison: ClauseComparisonLLMResponse, similarity: float) -> ChangeEntry:
     """Convert an LLM comparison result into a ChangeEntry."""
 
     return ChangeEntry(
-        clause_title=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+        clause_name=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+        section=clause_a.section_heading or clause_b.section_heading,
         change_type=comparison.change_type,
-        change_summary=comparison.change_summary,
+        modification_type=comparison.modification_type,
         risk_level=comparison.risk_level,
-        risk_impact=comparison.risk_impact,
-        original_text=comparison.original_text,
-        revised_text=comparison.revised_text,
+        affected_party=comparison.affected_party,
+        confidence=_confidence_from_similarity(similarity),
+        text_from_doc_a=clause_a.content,
+        text_from_doc_b=clause_b.content,
+        summary=comparison.summary,
+        is_substantive=comparison.is_substantive,
     )
 
 
-def _make_skipped_entry(clause_a: ClauseUnit, clause_b: ClauseUnit) -> ChangeEntry:
-    """Placeholder entry when LLM call limit is exceeded."""
+def _make_skipped_entry(clause_a: ClauseUnit, clause_b: ClauseUnit, reason: str) -> ChangeEntry:
+    """Placeholder entry when an LLM call could not complete."""
 
     return ChangeEntry(
-        clause_title=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
-        change_type="modified",
-        change_summary="Comparison skipped — LLM call limit exceeded or failed.",
-        risk_level="medium",
-        risk_impact="Unable to assess — manual review recommended.",
-        original_text=clause_a.content,
-        revised_text=clause_b.content,
+        clause_name=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+        section=clause_a.section_heading or clause_b.section_heading,
+        change_type="unknown",
+        modification_type=None,
+        risk_level=None,
+        confidence="low",
+        text_from_doc_a=clause_a.content,
+        text_from_doc_b=clause_b.content,
+        summary=reason,
+        is_substantive=True,
     )
 
 
-def _detect_restructure(clause_a: ClauseUnit, clause_b: ClauseUnit, all_clauses_a: List[ClauseUnit], all_clauses_b: List[ClauseUnit]) -> str:
-    """Detect if differences between a matched pair are due to content restructuring."""
-    norm_a = _normalize_for_containment(clause_a.content)
-    norm_b = _normalize_for_containment(clause_b.content)
+def _make_reorder_entry(clause_a: ClauseUnit, clause_b: ClauseUnit) -> ChangeEntry:
+    """Entry for a matched pair with identical content but different position."""
 
-    if len(norm_a) > len(norm_b) and norm_b in norm_a:
-        extra = norm_a.replace(norm_b, "", 1).strip()
-        if len(extra) > 30:
-            for other_b in all_clauses_b:
-                if other_b.content == clause_b.content:
-                    continue
-                if extra[:80] in _normalize_for_containment(other_b.content):
-                    return (
-                        "The content that appears missing from Document B was NOT deleted. "
-                        "It was restructured into separate sub-clauses elsewhere in Document B. "
-                        "Classify this as 'modified' with change_summary noting the restructuring."
-                    )
+    return ChangeEntry(
+        clause_name=clause_a.heading or clause_b.heading or f"Clause at position {clause_a.doc_order + 1}",
+        section=clause_a.section_heading or clause_b.section_heading,
+        change_type="reordered",
+        modification_type=None,
+        risk_level="low",
+        affected_party=None,
+        confidence="high",
+        text_from_doc_a=clause_a.content,
+        text_from_doc_b=clause_b.content,
+        summary=(f"Clause text is unchanged but its position moved from " f"#{clause_a.doc_order + 1} to #{clause_b.doc_order + 1} in the revised version."),
+        is_substantive=False,
+    )
 
-    if len(norm_b) > len(norm_a) and norm_a in norm_b:
-        extra = norm_b.replace(norm_a, "", 1).strip()
-        if len(extra) > 30:
-            for other_a in all_clauses_a:
-                if other_a.content == clause_a.content:
-                    continue
-                if extra[:80] in _normalize_for_containment(other_a.content):
-                    return (
-                        "The extra content in Document B was NOT newly added. "
-                        "It was merged from separate sub-clauses that existed in Document A. "
-                        "Classify this as 'modified' with change_summary noting the merge."
-                    )
 
-    return ""
+def _position_drift(clause_a: ClauseUnit, clause_b: ClauseUnit, len_a: int, len_b: int) -> float:
+    """Normalized absolute position drift between a matched pair."""
+
+    if len_a <= 1 or len_b <= 1:
+        return 0.0
+    return abs(clause_a.doc_order / (len_a - 1) - clause_b.doc_order / (len_b - 1))
 
 
 async def compare_matched_pairs(pairs: List[Tuple[int, int, float]], clauses_a: List[ClauseUnit], clauses_b: List[ClauseUnit], llm_client) -> Tuple[List[ChangeEntry], int, int]:
     """Run LLM comparison on matched pairs with differing content."""
-    results: List[ChangeEntry] = []
-    llm_calls = 0
-    llm_skipped = 0
 
+    len_a = len(clauses_a)
+    len_b = len(clauses_b)
+
+    reorder_entries: List[ChangeEntry] = []
+    llm_jobs: List[Tuple[int, int, float]] = []
+    skipped_entries: List[ChangeEntry] = []
+
+    # Pass 1: classify each pair — identical/reorder (no LLM), needs LLM, or
+    # skipped because we hit the budget.
     for idx_a, idx_b, similarity in pairs:
         clause_a = clauses_a[idx_a]
         clause_b = clauses_b[idx_b]
 
-        if _normalize_content(clause_a.content) == _normalize_content(clause_b.content):
+        if clause_a.content == clause_b.content:
+            if _position_drift(clause_a, clause_b, len_a, len_b) >= REORDER_DRIFT_THRESHOLD:
+                reorder_entries.append(_make_reorder_entry(clause_a, clause_b))
             continue
 
-        if llm_calls >= MAX_LLM_CALLS:
-            results.append(_make_skipped_entry(clause_a, clause_b))
-            llm_skipped += 1
+        if len(llm_jobs) >= MAX_LLM_CALLS:
+            skipped_entries.append(_make_skipped_entry(clause_a, clause_b, "Comparison skipped due to LLM call limit."))
             continue
 
-        try:
-            restructure_note = _detect_restructure(clause_a, clause_b, clauses_a, clauses_b)
-            negation_flips = _detect_negation_flips(clause_a.content, clause_b.content)
-            if negation_flips:
-                logger.info(f"Negation flips in {clause_a.clause_id}: {negation_flips}")
+        llm_jobs.append((idx_a, idx_b, similarity))
 
-            comparison = await _compare_single_pair(clause_a, clause_b, llm_client, restructure_note, negation_flips)
+    # Pass 2: run LLM calls concurrently, bounded by MAX_LLM_CONCURRENCY.
+    semaphore = asyncio.Semaphore(MAX_LLM_CONCURRENCY)
 
-            entry = _build_change_entry(clause_a, clause_b, comparison)
-            if negation_flips and entry.risk_level != "high":
-                logger.warning(f"Overriding risk to 'high' for {entry.clause_title} — negation flips detected")
-                entry.risk_level = "high"
-                if entry.risk_impact:
-                    entry.risk_impact += f" [Negation changes detected: {'; '.join(negation_flips)}]"
-            results.append(entry)
-            llm_calls += 1
-        except Exception as e:
-            logger.error(f"LLM comparison failed for {clause_a.clause_id} vs {clause_b.clause_id}: {e}", exc_info=True)
-            results.append(_make_skipped_entry(clause_a, clause_b))
-            llm_skipped += 1
+    async def _run_one(idx_a: int, idx_b: int, similarity: float) -> ChangeEntry:
+        clause_a = clauses_a[idx_a]
+        clause_b = clauses_b[idx_b]
+        async with semaphore:
+            try:
+                comparison = await _compare_single_pair(clause_a, clause_b, llm_client)
+                return _build_change_entry(clause_a, clause_b, comparison, similarity)
+            except Exception as e:
+                logger.error(f"LLM comparison failed for {clause_a.clause_id} vs {clause_b.clause_id}: {e}")
+                return _make_skipped_entry(clause_a, clause_b, f"Comparison failed: {e}")
 
+    llm_results: List[ChangeEntry] = []
+    llm_calls = 0
+    llm_call_failures = 0
+
+    if llm_jobs:
+        llm_results = await asyncio.gather(*(_run_one(*job) for job in llm_jobs))
+        for entry in llm_results:
+            if entry.change_type == "unknown":
+                llm_call_failures += 1
+            else:
+                llm_calls += 1
+
+    llm_skipped = len(skipped_entries) + llm_call_failures
+    results = reorder_entries + llm_results + skipped_entries
     return results, llm_calls, llm_skipped
-
-
-# --- Stage 4: Unmatched Entries & Grouping ---
-
-
-def _content_exists_in_clauses(text: str, clauses: List[ClauseUnit], exclude_indices: set) -> bool:
-    """Check if a clause's full content is contained in any other clause."""
-    norm = _normalize_for_containment(text)
-    if len(norm) < 30:
-        return False
-    for i, clause in enumerate(clauses):
-        if i in exclude_indices:
-            continue
-        other_norm = _normalize_for_containment(clause.content)
-        if norm in other_norm:
-            return True
-    return False
 
 
 def _build_unmatched_entries(unmatched_a: List[int], unmatched_b: List[int], clauses_a: List[ClauseUnit], clauses_b: List[ClauseUnit]) -> List[ChangeEntry]:
@@ -674,38 +688,31 @@ def _build_unmatched_entries(unmatched_a: List[int], unmatched_b: List[int], cla
 
     entries: List[ChangeEntry] = []
 
-    unmatched_a_set = set(unmatched_a)
-    unmatched_b_set = set(unmatched_b)
-
     for idx in unmatched_a:
         clause = clauses_a[idx]
-        if _content_exists_in_clauses(clause.content, clauses_b, unmatched_b_set):
-            logger.info(f"Skipping false removal: A[{idx}] content found inside a B chunk")
-            continue
         entries.append(
             ChangeEntry(
-                clause_title=clause.heading or f"Clause at position {clause.doc_order + 1}",
+                clause_name=clause.heading or f"Clause at position {clause.doc_order + 1}",
+                section=clause.section_heading,
                 change_type="removed",
-                change_summary="This clause has been removed from Document B.",
                 risk_level="medium",
-                risk_impact="Clause removed — verify no obligations or protections were lost.",
-                original_text=clause.content,
+                text_from_doc_a=clause.content,
+                text_from_doc_b=None,
+                summary="This clause was removed in the revised version.",
             )
         )
 
     for idx in unmatched_b:
         clause = clauses_b[idx]
-        if _content_exists_in_clauses(clause.content, clauses_a, unmatched_a_set):
-            logger.info(f"Skipping false addition: B[{idx}] content found inside an A chunk")
-            continue
         entries.append(
             ChangeEntry(
-                clause_title=clause.heading or f"Clause at position {clause.doc_order + 1}",
+                clause_name=clause.heading or f"Clause at position {clause.doc_order + 1}",
+                section=clause.section_heading,
                 change_type="added",
-                change_summary="This clause has been added in Document B.",
                 risk_level="medium",
-                risk_impact="New clause introduced — review for additional obligations or rights.",
-                revised_text=clause.content,
+                text_from_doc_a=None,
+                text_from_doc_b=clause.content,
+                summary="This clause was added in the revised version.",
             )
         )
 
@@ -713,11 +720,11 @@ def _build_unmatched_entries(unmatched_a: List[int], unmatched_b: List[int], cla
 
 
 def group_by_section(changes: List[ChangeEntry]) -> List[SectionGroup]:
-    """Group change entries by their section heading."""
+    """Group change entries by parent section heading."""
 
     section_map: Dict[str, List[ChangeEntry]] = {}
     for change in changes:
-        section = change.clause_title or "General / Ungrouped"
+        section = change.section or "General / Ungrouped"
         section_map.setdefault(section, []).append(change)
 
     return [SectionGroup(section_name=name, changes=entries) for name, entries in section_map.items()]
@@ -800,14 +807,14 @@ async def run(session_id: str, document_a: Document, document_b: Document) -> Co
     doc_text_a = await extract_text(document_a)
     doc_text_b = await extract_text(document_b)
 
-    if hash(doc_text_a) == cached_data.get("doc_1_hash") and hash(doc_text_b) == cached_data.get("doc_2_hash"):
-        logger.info(f"Document hashes match cached data for session {session_id} and agent {AGENT_NAME} — returning cached response")
-        return CompareResponse(
-            success=cached_data.get("success", True),
-            message=cached_data.get("message"),
-            summary=cached_data.get("summary", _zero_changes_summary()),
-            sections=cached_data.get("sections", []),
-        )
+    # if hash(doc_text_a) == cached_data.get("doc_1_hash") and hash(doc_text_b) == cached_data.get("doc_2_hash"):
+    #     logger.info(f"Document hashes match cached data for session {session_id} and agent {AGENT_NAME} — returning cached response")
+    #     return CompareResponse(
+    #         success=cached_data.get("success", True),
+    #         message=cached_data.get("message"),
+    #         summary=cached_data.get("summary", _zero_changes_summary()),
+    #         sections=cached_data.get("sections", []),
+    #     )
 
     # Guard: same document
     if hash(doc_text_a) == hash(doc_text_b):
@@ -848,6 +855,10 @@ async def run(session_id: str, document_a: Document, document_b: Document) -> Co
     match_result = await match_clauses(clauses_a, clauses_b, embedding_service)
     logger.info(f"Matched: {len(match_result.matched_pairs)}, " f"Unmatched A: {len(match_result.unmatched_a)}, " f"Unmatched B: {len(match_result.unmatched_b)}")
 
+    # Stage 2.5: Reconcile matched pairs where one side merges multiple clauses
+    surviving_pairs, matched_containment_entries = _reconcile_matched_containment(match_result.matched_pairs, clauses_a, clauses_b)
+    match_result.matched_pairs = surviving_pairs
+
     # Stage 3: Split/merge detection
     split_merge_entries, remaining_a, remaining_b = _detect_splits_and_merges(match_result, clauses_a, clauses_b)
 
@@ -865,13 +876,8 @@ async def run(session_id: str, document_a: Document, document_b: Document) -> Co
     # Stage 5: Build unmatched entries
     unmatched_entries = _build_unmatched_entries(remaining_a, remaining_b, clauses_a, clauses_b)
 
-    # Deduplicate
-    primary_titles = {_normalize_heading(c.clause_title) for c in llm_changes + unmatched_entries}
-    filtered_split_merge = [e for e in split_merge_entries if _normalize_heading(e.clause_title) not in primary_titles]
-    filtered_containment = [e for e in containment_entries if _normalize_heading(e.clause_title) not in primary_titles]
-
     # Stage 6: Combine, group, summarize
-    all_changes = llm_changes + filtered_split_merge + filtered_containment + unmatched_entries
+    all_changes = llm_changes + matched_containment_entries + split_merge_entries + containment_entries + unmatched_entries
     sections = group_by_section(all_changes)
     summary = _compute_summary(all_changes, llm_calls_made, llm_calls_skipped)
 
