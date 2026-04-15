@@ -37,27 +37,7 @@ Return a valid JSON object with this exact structure:
                        'Defined Term'
                        'Restriction'
                        'Obligation'
-                       'Date'
-
-                     GOOD (specific and unique):
-                       'Licensor Name'           → Epit Systems Corporation
-                       'Licensee Name'           → XYZ Inc.
-                       'Licensor Address'        → 405 State Hwy 121, Lewisville, TX 75067
-                       'Licensee Address'        → 1 N Central Rd, Fort Lee, NJ 07024
-                       'Contract Type'           → Specification Access and Integration Agreement
-                       'Effective Date'          → Absent
-                       'Initial Term'            → 12 months
-                       'Renewal Term'            → 12 months, automatic
-                       'Termination Notice'      → 30 days written notice
-                       'Governing Law'           → State of Wisconsin, USA
-                       'Dispute Jurisdiction'    → Wisconsin state and federal courts
-                       'Covered APIs'            → Stripe API, PayPal API, eBay API
-                       'Warranty Type'           → AS-IS
-                       'IP Ownership'            → Customer (Work Made for Hire)
-                       'Assignment Rights'       → Requires Epit written consent
-                       'Indemnifying Party'      → XYZ Inc.
-                       'Post-Termination Retention' → 1 year
-                       'Marketing Approval'      → Epit prior written consent required",
+                       'Date'",
 
       "value": "bare fact only — name, date, number, place, or short label. 
                 Never a sentence. Never an explanation. Max 6 words.
@@ -70,27 +50,42 @@ Return a valid JSON object with this exact structure:
     {
       "milestone_name": "short label (e.g., 'Auto-Renewal Trigger', 'Integration Test Deadline')",
       "date_or_trigger": "exact date or condition text from the contract",
-      "description": "one sentence: what activates, who must act, what happens if ignored",
-      "source_clause": "exact section name as written (e.g., 'Section 8 — Term')"
+      "description": "2–3 sentences (minimum 30 words total). 
+                      Sentence 1: What event activates this milestone and which party must act. 
+                      Sentence 2: What the required action or obligation is, including any notice 
+                      periods, approval steps, or conditions that must be met. 
+                      Sentence 3: What the legal or commercial consequence is if this milestone 
+                      is missed, ignored, or triggered without preparation (e.g., auto-renewal, 
+                      termination right, fee escalation, loss of remedy).",
+      "source_clause": "exact section name as written (e.g., 'Term')"
     }
-    // Strictly extract minimum 8 milestones. Repeat for every time-sensitive obligation — minimum 8 milestones
+    // Minimum 8 milestones. Repeat for every time-sensitive obligation.
   ],
 
   "risk_and_compliance_insights": [
     {
-      "issue_title": "short descriptive title (e.g., 'Unilateral Integration Testing Approval')",
+      "issue_title": "short descriptive title (e.g., 'No Limitation of Liability Cap')",
       "severity": "Critical | High | Medium | Low",
-      "clause_title": "exact section name as written in the contract",
+      "clause_title": "For present clauses: exact clause name as written in the contract. For missing clauses: 'Missing Clause'",
       "issue_type": "Missing Clause | Ambiguity | One-Sided Provision | Unusual Obligation | 
                      Broad Term | Unenforceable Clause | Jurisdiction Risk | Other",
-      "issue": "Quote the exact contract language creating the risk. State the consequence. 
-                Name the party that bears it.",
+      "issue": "For present clauses: quote the exact contract language creating the risk, state the consequence, and name the party that bears it. 
+                For missing clauses: state clearly that this clause does not appear anywhere in the contract, 
+                identify what standard protection it would provide, and explain the specific legal consequence 
+                of its absence for XYZ Inc.",
       "scenario": "Concrete 2-sentence scenario using 'Epit' and 'XYZ Inc.' by name showing 
-                   exactly how this clause causes real harm",
-      "fix": "Ready-to-insert replacement language. Example format: 
-              'Replace [current text] with: [new text]' OR 
-              'Add after [clause reference]: [new text]'"
+                   exactly how this clause — or its absence — causes real harm",
+      "fix": "Ready-to-insert replacement or new clause language. 
+              For present clauses: 'Replace [current text] with: [new text]' OR 'Add after [clause reference]: [new text]'. 
+              For missing clauses: 'Add new clause titled [Clause Title]: [full clause text ready to insert into the agreement]'"
     }
-    // Strictly extract minimum 8 insights. Repeat for every risk — minimum 8 insights
+    // Minimum 8 insights total.
+    // At least 4 insights MUST be of issue_type 'Missing Clause' — flagging standard clauses 
+    // that are entirely absent from the contract (e.g., limitation of liability, indemnification, 
+    // dispute resolution, data protection, force majeure, non-solicitation, audit rights, etc.).
+    // For each Missing Clause insight, confirm absence by stating: 
+    // "This clause does not appear anywhere in the contract."
+    // Do NOT fabricate missing clauses — only flag a clause as missing if it genuinely 
+    // does not exist anywhere in the contract text.
   ]
 }
