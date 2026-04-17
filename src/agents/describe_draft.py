@@ -1,17 +1,12 @@
-"""Describe & Draft Agent -- generates clause/agreement drafts in 3 styles."""
+"""
+Describe & Draft Agent — thin dispatcher.
 
-from typing import Optional
+Delegates all logic to src/tools/drafter.py. No business logic here.
+"""
+from src.schemas.describe_draft import DescribeDraftResponse
+from src.tools.drafter import generate_describe_draft
 
-from src.schemas.draft import DraftResponse
-from src.tools.drafter import generate_drafts
 
-
-async def run(
-    session_id: Optional[str],
-    user_prompt: str,
-) -> DraftResponse:
-    """Generate 3 draft alternatives from a user description."""
-    return await generate_drafts(
-        session_id=session_id,
-        user_prompt=user_prompt,
-    )
+async def run(prompt: str, session_id: str) -> DescribeDraftResponse:
+    """Run the describe-and-draft agent for a session."""
+    return await generate_describe_draft(prompt=prompt, session_id=session_id)
