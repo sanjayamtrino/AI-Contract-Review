@@ -35,10 +35,20 @@ pystache = "*"
 agent-framework = { version = "*", allow-prereleases = true }
 agent-framework-azure-ai = { version = "*", allow-prereleases = true }
 ollama = "*"
+pytest = "*"
+pytest-asyncio = "*"
+requests = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 
 [tool.black]
 line-length = 200
