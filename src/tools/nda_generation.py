@@ -1,80 +1,96 @@
 from pathlib import Path
 from typing import Optional
 
-from src.api.context import get_session_id
 from src.dependencies import get_service_container
-from src.schemas.tool_schema import NDAGenerationRequest
+from src.schemas.describe_and_draft import (
+    NDAContentGenerationRequest,
+    NDAContentGenerationResponse,
+    NDAGenerationHeadingRequest,
+    NDAGenerationHeadingResponse,
+)
+
+AGENT_NAME = "describe_and_draft"
 
 
-async def generate_nda_headings(request: NDAGenerationRequest, session_id: Optional[str] = None) -> str:
+async def generate_nda_headings(request: NDAGenerationHeadingRequest, session_id: Optional[str] = None) -> NDAGenerationHeadingResponse:
     """Generate NDA headings."""
 
     container = get_service_container()
     llm_model = container.azure_openai_model
 
-    # Get session_id from context if not provided
-    if not session_id:
-        session_id = get_session_id()
+    session_data = container.session_manager.get_session(session_id)
+    if not session_data:
+        return NDAGenerationHeadingResponse(headings=[])
 
-    session = None
-    if session_id:
-        try:
-            session = container.session_manager.get_or_create_session(session_id)
-        except Exception:
-            session = None
+    agent_results = session_data.tool_results.setdefault(AGENT_NAME, {})
 
-    # Check if NDA generation already exists in session cache
-    cache_key = "nda_generation"
-    if session and cache_key in session.tool_results:
-        return session.tool_results[cache_key]
+    # Return cached headings if they already exist
+    if agent_results:
+        return NDAGenerationHeadingResponse(headings=list(agent_results.keys()))
 
-    # step = _validate_step(request.step)
+    # Load prompt
     prompt = Path(r"src\services\prompts\v1\nda_generation.mustache").read_text(encoding="utf-8")
 
     context = {
         "nda_description": request.nda_description,
     }
 
-    generated_text: str = await llm_model.generate(prompt=prompt, context=context, response_model=None, mode="markdown")
+    # Generate headings from LLM
+    generated_content: NDAGenerationHeadingResponse = await llm_model.generate(
+        prompt=prompt,
+        context=context,
+        response_model=NDAGenerationHeadingResponse,
+        mode="JSON",
+    )
 
-    # Store the result in session cache if session exists
-    if session:
-        session.tool_results[cache_key] = generated_text
+    # Cache generated headings
+    for heading in generated_content.headings:
+        agent_results[heading] = {}
+        agent_results["user_input"] = request.nda_description
 
-    return generated_text
-    # return NDAGenerationResponse(generated_text=generated_text)
+    return generated_content
 
 
-async def generate_heading_description(request: NDAGenerationRequest) -> str:
-    """Generate content for a specific NDA heading based on type of document."""
+async def generate_heading_description(request: NDAContentGenerationRequest, session_id: Optional[str] = None) -> NDAContentGenerationResponse:
+    """Generate content for a specific NDA heading and store it in session."""
 
-    # container = get_service_container()
-    # llm_model = container.azure_openai_model
+    container = get_service_container()
+    llm_model = container.azure_openai_model
 
-    # # Get session_id from context if not provided
-    # if not session_id:
-    #     session_id = get_session_id()
+    # Get session
+    session_data = container.session_manager.get_session(session_id)
+    if not session_data:
+        raise ValueError("Session not found")
 
-    # session = None
-    # if session_id:
-    #     try:
-    #         session = container.session_manager.get_or_create_session(session_id)
-    #     except Exception:
-    #         session = None
+    # Ensure agent storage exists
+    agent_results = session_data.tool_results.setdefault(AGENT_NAME, {})
 
-    # # Check if NDA generation already exists in session cache
-    # cache_key = "nda_generation_heading"
-    # if session and cache_key in session.tool_results:
-    #     return session.tool_results[cache_key]
+    # Ensure heading exists in session (user must have generated headings first)
+    heading = request.heading  # assuming this is a single string
 
-    # This function can be used to generate individual headings if needed
+    if heading not in agent_results:
+        raise ValueError(f"Heading '{heading}' not found in session.")
+
+    if "content" in agent_results[heading]:
+        return agent_results[heading]["content"]
+
+    # Load prompt
     prompt = Path(r"src\services\prompts\v1\nda_description_prompt.mustache").read_text(encoding="utf-8")
 
     context = {
-        "nda_description": request.nda_description,
-        "heading": request.headings,
+        "nda_description": agent_results["user_input"],
+        "heading": heading,
     }
 
-    generated_heading: str = await get_service_container().azure_openai_model.generate(prompt=prompt, context=context, response_model=None, mode="markdown")
+    # Generate content
+    generated_heading: NDAContentGenerationResponse = await llm_model.generate(
+        prompt=prompt,
+        context=context,
+        response_model=NDAContentGenerationResponse,
+        mode="JSON",
+    )
+
+    # Store inside session under that heading
+    agent_results[heading]["content"] = generated_heading.content
 
     return generated_heading

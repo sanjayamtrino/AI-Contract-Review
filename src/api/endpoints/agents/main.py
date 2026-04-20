@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 
 from src.api.session_utils import get_session_id
 from src.schemas.contract_analyzer import ContractAnalyzerResponse
+from src.schemas.describe_and_draft import DraftRequest, DraftResponse
 from src.schemas.doc_chat import DocChatResponse
 from src.schemas.general_review import GeneralReviewRequest, GeneralReviewResponse
 from src.schemas.playbook_review import PlayBookReviewFinalResponse, RuleCheckRequest
 from src.tools.comparision import run as compare_documents_service
+from src.tools.describe_and_draft import draft_document as draft_document_service
 from src.tools.doc_chat import query_document as query_document_service
 from src.tools.general_review import clause_review, full_document_review
 from src.tools.key_information import (
@@ -37,14 +39,6 @@ async def playbook_review_endpoint(request: RuleCheckRequest, session_id: str = 
 
     review_result = await playbook_review_service(session_id=session_id, request=request)
     return review_result
-
-
-# @router.post("/general-review", response_model=GeneralReviewResponse)
-# async def general_review_endpoint(request: GeneralReviewRequest) -> GeneralReviewResponse:
-#     """Run general-purpose rule-based review."""
-
-#     review_result = await general_review_service(request)
-#     return review_result
 
 
 @router.post("/general-review", response_model=GeneralReviewResponse)
@@ -89,17 +83,25 @@ async def query_document_endpoint(query: str, session_id: str = Depends(get_sess
     return llm_result
 
 
+@router.post("/draft", response_model=DraftResponse)
+async def draft_document_endpoint(request: DraftRequest, session_id: str = Depends(get_session_id)) -> DraftResponse:
+    """Draft the document/clause  for the user given query."""
+
+    result = await draft_document_service(request, session_id)
+    return result
+
+
 # @router.post("/generate-nda-headings")
-# async def generate_nda_endpoint(request: NDAGenerationRequest, session_id: str = Depends(get_session_id)):
+# async def generate_nda_endpoint(request: NDAGenerationHeadingRequest, session_id: str = Depends(get_session_id)) -> NDAGenerationHeadingResponse:
 #     """Stepwise NDA generation endpoint."""
 
 #     response = await generate_nda_headings(request, session_id)
-#     return HTMLResponse(response, status_code=200)
+#     return response
 
 
 # @router.post("/generate-nda-content")
-# async def generate_nda_content(request: NDAGenerationRequest, session_id: str = Depends(get_session_id)):
+# async def generate_nda_content(request: NDAContentGenerationRequest, session_id: str = Depends(get_session_id)) -> NDAContentGenerationResponse:
 #     """Generate content for a specific NDA heading based on type of document."""
 
-#     response = await generate_heading_description(request)
-#     return HTMLResponse(response, status_code=200)
+#     response = await generate_heading_description(request, session_id)
+#     return response
