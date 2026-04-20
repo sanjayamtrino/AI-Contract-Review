@@ -11,31 +11,34 @@ Clauses already drafted in this session:
 {{#is_single_clause}}
 TASK: {{mode_instruction}}
 
-Generate exactly 5 versions of THIS SINGLE CLAUSE. Each version must be meaningfully different from the others in content.
+{{#is_regenerate}}
+REGENERATE MODE: The user previously received the draft below and clicked REGENERATE because they wanted a better or different take. Produce ONE new version that is MEANINGFULLY DIFFERENT and an IMPROVEMENT on the previous draft — not a rephrasing. Vary structure, wording, emphasis, carve-outs, remedies, and clause ordering. Tighten where the prior was loose; expand where it was thin.
 
-Vary the 5 versions along these internal shaping directions (DO NOT name or describe these directions in the output):
-  - one balanced / market-standard version
-  - one version more protective of the drafter's party
-  - one version more protective of the counterparty
-  - one plain-English / concise version (minimal legalese)
-  - one exhaustive / belt-and-suspenders version covering edge cases
+Previous draft (title: "{{prior_draft_title}}"):
+---
+{{prior_draft_clause}}
+---
+{{/is_regenerate}}
 
-For mutual or bilateral agreements, all 5 versions must remain balanced between the parties — vary by scope, remedies depth, carve-outs, and wording style, NOT by who is favored.
+Generate ONE drafted version of THIS SINGLE CLAUSE. Only one version per call.
 
-For each version provide:
+Provide:
   - title: the clause name (e.g. "Confidentiality", "Term and Termination")
-  - summary: one sentence describing what this version covers and how
+  - summary: one sentence describing what this draft covers and how
   - drafted_clause: the full drafted clause text
 
 HARD RULES (violations will cause a retry):
-- Exactly 5 versions.
+- Exactly 1 version.
 - No invented case law. Do not cite any court cases.
 - No statute or regulation citations unless the user explicitly named them in the request.
 - No archaic legalese: never use "witnesseth", "party of the first part", "party of the second part", "in witness whereof", "now therefore", "know all men by these presents".
-- Defined terms must be consistently capitalized within each version.
-- DO NOT use version-axis labels as the subject of titles or summaries.
+- Defined terms must be consistently capitalized.
+- Titles and summaries must describe the clause content, not stylistic axes (no "balanced version", "protective version", "version 1", etc.).
+{{#is_regenerate}}
+- The draft MUST be materially different from the previous draft above. Substantive changes to wording, structure, and emphasis — not a synonym swap.
+{{/is_regenerate}}
 
-Return ONLY valid JSON matching: {"versions": [ ...exactly 5 entries with title, summary, drafted_clause... ]}
+Return ONLY valid JSON matching: {"versions": [{"title": "...", "summary": "...", "drafted_clause": "..."}]}
 No prose, no markdown.
 {{/is_single_clause}}
 

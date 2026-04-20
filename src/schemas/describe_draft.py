@@ -7,12 +7,19 @@ from pydantic import BaseModel, Field
 
 
 class DescribeDraftRequest(BaseModel):
-    """Request body — only prompt; session_id arrives via X-Session-ID header."""
+    """Request body — prompt and optional regenerate flag; session_id arrives via X-Session-ID header."""
 
     prompt: str = Field(
         description="Free-text drafting request (e.g. 'draft an NDA' or 'draft a liquidity cap clause')",
         min_length=1,
         max_length=2000,
+    )
+    regenerate: bool = Field(
+        default=False,
+        description=(
+            "If true and the session has a prior single-clause draft, produce an improved "
+            "variation instead of a fresh draft. Ignored for list_of_clauses / clarification."
+        ),
     )
 
 
@@ -37,7 +44,11 @@ class ClauseListEntry(BaseModel):
 
 
 class ClauseVersion(BaseModel):
-    """One of the 5 drafted versions of a single clause (single_clause mode only)."""
+    """One drafted version of a single clause (single_clause mode).
+
+    A single_clause call returns one ClauseVersion. Clicking regenerate produces
+    another improved ClauseVersion for the same clause.
+    """
 
     title: str = Field(description="Clause name or title")
     summary: str = Field(description="One-sentence summary of this version's approach")
@@ -57,12 +68,15 @@ class ClauseListLLMResponse(BaseModel):
 
 
 class DescribeDraftLLMResponse(BaseModel):
-    """Raw LLM output for single_clause mode — exactly 5 ClauseVersions."""
+    """Raw LLM output for single_clause mode — exactly 1 ClauseVersion per call.
+
+    Additional versions are produced by calling the endpoint again with regenerate=true.
+    """
 
     versions: List[ClauseVersion] = Field(
-        min_length=5,
-        max_length=5,
-        description="Exactly 5 versions — validated post-generation",
+        min_length=1,
+        max_length=1,
+        description="Exactly 1 version per call — validated post-generation",
     )
 
 
@@ -83,7 +97,7 @@ class DescribeDraftResponse(BaseModel):
 
     Which field is populated depends on `mode`:
       - list_of_clauses → `clauses` (the full clause list for the agreement type)
-      - single_clause   → `versions` (exactly 5 drafted versions of the requested clause)
+      - single_clause   → `versions` (exactly 1 drafted version per call; regenerate for more)
       - clarification   → `clarification_question` (no generation)
     """
 
@@ -98,7 +112,11 @@ class DescribeDraftResponse(BaseModel):
     )
     versions: List[ClauseVersion] = Field(
         default_factory=list,
-        description="Populated only in single_clause mode (exactly 5).",
+        description="Populated only in single_clause mode — 1 entry per call.",
+    )
+    regenerated: bool = Field(
+        default=False,
+        description="True when this response was produced by a regenerate call.",
     )
     error_type: Optional[DescribeDraftErrorType] = None
     error_message: Optional[str] = None

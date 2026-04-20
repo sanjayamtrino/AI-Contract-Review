@@ -14,13 +14,16 @@ BASE_URL = "http://localhost:8000"
 ENDPOINT = f"{BASE_URL}/api/v1/describe-draft/generate"
 
 
-def _post(prompt: str, session_id: str) -> dict:
+def _post(prompt: str, session_id: str, regenerate: bool = False) -> dict:
     """Make a synchronous POST request and return the parsed JSON body."""
     try:
         import requests
+        body = {"prompt": prompt}
+        if regenerate:
+            body["regenerate"] = True
         resp = requests.post(
             ENDPOINT,
-            json={"prompt": prompt},
+            json=body,
             headers={"X-Session-ID": session_id, "Content-Type": "application/json"},
             timeout=60,
         )
@@ -76,19 +79,38 @@ def check_server():
 
 
 def test_e2e_single_clause_mode():
-    """POST with a specific clause request returns mode=single_clause with 5 versions."""
+    """POST with a specific clause request returns mode=single_clause with one draft."""
     session_id = f"e2e-single-{uuid.uuid4()}"
     data = _post("Draft a confidentiality clause", session_id)
 
     assert data["status"] == "ok", f"Expected ok, got: {data}"
     assert data["mode"] == "single_clause"
-    assert len(data["versions"]) == 5
-    for v in data["versions"]:
-        assert v["title"].strip(), "title must not be empty"
-        assert v["summary"].strip(), "summary must not be empty"
-        assert v["drafted_clause"].strip(), "drafted_clause must not be empty for single_clause mode"
+    assert len(data["versions"]) == 1
+    v = data["versions"][0]
+    assert v["title"].strip(), "title must not be empty"
+    assert v["summary"].strip(), "summary must not be empty"
+    assert v["drafted_clause"].strip(), "drafted_clause must not be empty for single_clause mode"
     assert data["disclaimer"] is not None
     assert data["clarification_question"] is None
+    assert data.get("regenerated", False) is False
+
+
+def test_e2e_single_clause_regenerate_returns_different_draft():
+    """After a single_clause draft, regenerate=true returns a different draft and flags regenerated=true."""
+    session_id = f"e2e-regen-{uuid.uuid4()}"
+    first = _post("Draft a confidentiality clause", session_id)
+    assert first["status"] == "ok"
+    assert first["mode"] == "single_clause"
+    assert len(first["versions"]) == 1
+    first_clause = first["versions"][0]["drafted_clause"]
+
+    second = _post("Draft a confidentiality clause", session_id, regenerate=True)
+    assert second["status"] == "ok", f"Regenerate failed: {second}"
+    assert second["mode"] == "single_clause"
+    assert len(second["versions"]) == 1
+    assert second.get("regenerated") is True, "Response must flag regenerated=true"
+    assert second["versions"][0]["drafted_clause"] != first_clause, \
+        "Regenerated draft must differ from the original"
 
 
 def test_e2e_list_of_clauses_mode():
@@ -181,7 +203,8 @@ def test_e2e_banned_phrases_absent_in_response():
     if data["status"] != "ok" or data["mode"] != "single_clause":
         pytest.skip("Response not in single_clause mode — skipping banned phrase check")
 
-    for v in data["versions"]:
-        lower = v["drafted_clause"].lower()
-        for phrase in BANNED:
-            assert phrase not in lower, f"Banned phrase '{phrase}' found in version titled '{v['title']}'"
+    assert len(data["versions"]) == 1
+    v = data["versions"][0]
+    lower = v["drafted_clause"].lower()
+    for phrase in BANNED:
+        assert phrase not in lower, f"Banned phrase '{phrase}' found in version titled '{v['title']}'"

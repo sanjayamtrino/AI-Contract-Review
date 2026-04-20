@@ -1,5 +1,9 @@
 """
-Describe & Draft tool — classify intent, generate 5 versions, validate, write session memory.
+Describe & Draft tool — classify intent, generate a draft, validate, write session memory.
+
+single_clause mode returns one draft per call; the caller regenerates by invoking
+the endpoint again with regenerate=true, which asks the LLM to improve on the
+previous draft stored in session metadata.
 
 All business logic for the Describe & Draft Agent lives here. The agent module
 (src/agents/describe_draft.py) is a thin dispatcher that delegates to this module.
@@ -33,8 +37,8 @@ _BANNED_PHRASES = [
 ]
 
 # Axis-label patterns that must not leak into titles or summaries (case-insensitive
-# substring match). These target phrases the LLM uses when it labels a VERSION
-# by its axis, not legitimate legal vocabulary.
+# substring match). These target phrases the LLM uses when it labels a draft by
+# stylistic axis instead of clause content, not legitimate legal vocabulary.
 _BANNED_TITLE_SUMMARY_WORDS = [
     "party a-focused",
     "party b-focused",
@@ -55,6 +59,8 @@ _BANNED_TITLE_SUMMARY_WORDS = [
     "minimal version",
     "essential version",
     "belt-and-suspenders",
+    "regenerated version",
+    "improved version",
 ]
 
 # Max prompt length (must match schema Field max_length)
@@ -82,48 +88,61 @@ def _sanitize_prompt(prompt: str) -> str:
 
 
 def _validate_draft_response(response: DescribeDraftLLMResponse) -> None:
-    """Validate single_clause mode output: exactly 5 versions, each a full clause.
+    """Validate single_clause mode output: exactly 1 version containing a full clause.
 
     Checks:
-      - exactly 5 versions
-      - non-empty title and summary on every version
+      - exactly 1 version
+      - non-empty title and summary
       - drafted_clause is at least 50 chars and contains no banned phrases or axis labels
     """
-    if len(response.versions) != 5:
-        raise ValueError(f"Expected 5 versions, got {len(response.versions)}")
-    for i, version in enumerate(response.versions):
-        idx = i + 1
-        if not version.title or not version.title.strip():
-            raise ValueError(f"Version {idx}: title is empty")
-        if not version.summary or not version.summary.strip():
-            raise ValueError(f"Version {idx}: summary is empty")
+    if len(response.versions) != 1:
+        raise ValueError(f"Expected 1 version, got {len(response.versions)}")
+    version = response.versions[0]
 
-        # Axis-label leakage check — titles and summaries must describe content, not style
-        title_lower = version.title.lower()
-        summary_lower = version.summary.lower()
-        for word in _BANNED_TITLE_SUMMARY_WORDS:
-            if word in title_lower:
-                raise ValueError(
-                    f"Version {idx}: title contains forbidden axis label '{word}'"
-                )
-            if word in summary_lower:
-                raise ValueError(
-                    f"Version {idx}: summary contains forbidden axis label '{word}'"
-                )
+    if not version.title or not version.title.strip():
+        raise ValueError("Version: title is empty")
+    if not version.summary or not version.summary.strip():
+        raise ValueError("Version: summary is empty")
 
-        if not version.drafted_clause.strip():
-            raise ValueError(f"Version {idx}: drafted_clause is empty")
-        if len(version.drafted_clause) < 50:
+    # Axis-label leakage check — titles and summaries must describe content, not style
+    title_lower = version.title.lower()
+    summary_lower = version.summary.lower()
+    for word in _BANNED_TITLE_SUMMARY_WORDS:
+        if word in title_lower:
             raise ValueError(
-                f"Version {idx}: drafted_clause suspiciously short "
-                f"({len(version.drafted_clause)} chars)"
+                f"Version: title contains forbidden axis label '{word}'"
             )
-        lower = version.drafted_clause.lower()
-        for phrase in _BANNED_PHRASES:
-            if phrase in lower:
-                raise ValueError(
-                    f"Version {idx}: banned phrase '{phrase}' found in drafted_clause"
-                )
+        if word in summary_lower:
+            raise ValueError(
+                f"Version: summary contains forbidden axis label '{word}'"
+            )
+
+    if not version.drafted_clause.strip():
+        raise ValueError("Version: drafted_clause is empty")
+    if len(version.drafted_clause) < 50:
+        raise ValueError(
+            f"Version: drafted_clause suspiciously short "
+            f"({len(version.drafted_clause)} chars)"
+        )
+    lower = version.drafted_clause.lower()
+    for phrase in _BANNED_PHRASES:
+        if phrase in lower:
+            raise ValueError(
+                f"Version: banned phrase '{phrase}' found in drafted_clause"
+            )
+
+
+def _validate_regenerated_draft_differs(
+    new_version: ClauseVersion, prior_version: ClauseVersion
+) -> None:
+    """Regenerate must produce a draft meaningfully different from the prior one."""
+    if (
+        new_version.drafted_clause.strip() == prior_version.drafted_clause.strip()
+        or new_version.summary.strip() == prior_version.summary.strip()
+    ):
+        raise ValueError(
+            "Regenerated version is identical to the prior draft — not a meaningful variation"
+        )
 
 
 def _validate_clause_list(response: ClauseListLLMResponse) -> None:
@@ -170,17 +189,24 @@ async def _classify_intent(prompt: str) -> IntentClassification:
     )
 
 
-async def _generate_clause_versions(
+async def _generate_clause_draft(
     prompt: str,
     agreement_type: Optional[str],
     prior_clauses: List[str],
+    prior_draft: Optional[ClauseVersion] = None,
 ) -> DescribeDraftLLMResponse:
-    """single_clause mode: generate exactly 5 versions of one clause."""
+    """single_clause mode: generate exactly 1 draft of the requested clause.
+
+    If `prior_draft` is given, the prompt asks the LLM for a meaningfully
+    different and improved variation (regenerate flow); temperature is
+    nudged up to encourage variation.
+    """
     container = get_service_container()
     llm = container.azure_openai_model
     mode_instruction = (
         f"Draft a {agreement_type or 'legal'} clause as requested by the user."
     )
+    is_regenerate = prior_draft is not None
     context = {
         "user_prompt": prompt,
         "mode": "single_clause",
@@ -191,6 +217,9 @@ async def _generate_clause_versions(
         "has_agreement_type": bool(agreement_type),
         "prior_clauses": "\n".join(prior_clauses) if prior_clauses else "",
         "has_prior_clauses": bool(prior_clauses),
+        "is_regenerate": is_regenerate,
+        "prior_draft_title": prior_draft.title if prior_draft else "",
+        "prior_draft_clause": prior_draft.drafted_clause if prior_draft else "",
     }
     rendered = load_prompt("describe_draft_generation_prompt", context=context)
     return await llm.generate(
@@ -200,10 +229,10 @@ async def _generate_clause_versions(
         system_message=(
             "You are an expert legal drafter. "
             "Never invent case law. Never cite statutes unless the user named them. "
-            "No archaic legalese. Consistent defined-term capitalization within each version. "
+            "No archaic legalese. Consistent defined-term capitalization. "
             "Return ONLY valid JSON matching the schema."
         ),
-        temperature=0.15,
+        temperature=0.35 if is_regenerate else 0.15,
     )
 
 
@@ -247,9 +276,17 @@ async def _generate_clause_list(
 def _read_session_context(session_id: str) -> dict:
     container = get_service_container()
     session = container.session_manager.get_or_create_session(session_id)
+    last_raw = session.metadata.get("draft_last_version")
+    last_version: Optional[ClauseVersion] = None
+    if isinstance(last_raw, dict):
+        try:
+            last_version = ClauseVersion.model_validate(last_raw)
+        except Exception:
+            last_version = None
     return {
         "agreement_type": session.metadata.get("draft_agreement_type"),
-        "prior_clauses": session.metadata.get("draft_prior_clauses", []),
+        "prior_clauses": session.metadata.get("draft_prior_clauses", []) or [],
+        "last_version": last_version,
     }
 
 
@@ -258,6 +295,8 @@ def _write_session_context(
     agreement_type: Optional[str],
     new_clause_titles: List[str],
     clear_prior: bool = False,
+    last_version: Optional[ClauseVersion] = None,
+    clear_last_version: bool = False,
 ) -> None:
     container = get_service_container()
     session = container.session_manager.get_or_create_session(session_id)
@@ -266,21 +305,31 @@ def _write_session_context(
     if clear_prior:
         session.metadata["draft_prior_clauses"] = []
     if new_clause_titles:
-        prior = session.metadata.get("draft_prior_clauses", [])
+        prior = session.metadata.get("draft_prior_clauses", []) or []
         session.metadata["draft_prior_clauses"] = prior + new_clause_titles
+    if clear_last_version:
+        session.metadata.pop("draft_last_version", None)
+    elif last_version is not None:
+        session.metadata["draft_last_version"] = last_version.model_dump()
 
 
-async def generate_describe_draft(prompt: str, session_id: str) -> DescribeDraftResponse:
+async def generate_describe_draft(
+    prompt: str,
+    session_id: str,
+    regenerate: bool = False,
+) -> DescribeDraftResponse:
     """
     Main entry point for the describe-draft agent.
 
     Flow:
       1. Sanitize input.
-      2. Read session memory.
+      2. Read session memory (including last single-clause draft if any).
       3. Classify intent (temp 0.0).
       4. On clarification: return immediately with no generation.
-      5. On list/single: generate 5 versions (temp 0.1/0.15), validate, retry once on failure.
-      6. Write session memory.
+      5. On list_of_clauses: generate one clause list, validate, retry once.
+         On single_clause: generate ONE draft (regenerate=True asks for an improved
+         variation of the prior draft), validate, retry once.
+      6. Write session memory — stash the latest single-clause draft for later regenerate.
       7. Emit audit log.
     """
     start_time = time.time()
@@ -302,6 +351,7 @@ async def generate_describe_draft(prompt: str, session_id: str) -> DescribeDraft
     ctx = _read_session_context(session_id)
     stored_agreement_type: Optional[str] = ctx["agreement_type"]
     prior_clauses: List[str] = ctx["prior_clauses"]
+    stored_last_version: Optional[ClauseVersion] = ctx["last_version"]
 
     # 3. Classify intent
     try:
@@ -400,29 +450,38 @@ async def generate_describe_draft(prompt: str, session_id: str) -> DescribeDraft
         clauses_out = list_response.clauses
         units_generated = len(clauses_out)
     else:
-        # single_clause mode — 5 versions with retry
+        # single_clause mode — generate ONE draft (regenerate asks for an improved
+        # variation of the prior draft stored in session).
+        effective_regenerate = regenerate and stored_last_version is not None
+        prior_draft_for_prompt = stored_last_version if effective_regenerate else None
+
         versions_response: Optional[DescribeDraftLLMResponse] = None
         for attempt in range(2):
             try:
-                raw = await _generate_clause_versions(
+                raw = await _generate_clause_draft(
                     prompt=clean_prompt,
                     agreement_type=effective_agreement_type,
                     prior_clauses=prior_clauses if not clear_prior else [],
+                    prior_draft=prior_draft_for_prompt,
                 )
                 _validate_draft_response(raw)
+                if effective_regenerate:
+                    _validate_regenerated_draft_differs(
+                        raw.versions[0], stored_last_version  # type: ignore[arg-type]
+                    )
                 versions_response = raw
                 break
             except ValueError as ve:
                 validation_error = str(ve)
                 logger.warning(
-                    "describe_draft validation failed session=%s attempt=%d error=%s",
-                    session_id, attempt + 1, validation_error,
+                    "describe_draft validation failed session=%s attempt=%d regenerate=%s error=%s",
+                    session_id, attempt + 1, effective_regenerate, validation_error,
                 )
             except Exception as e:
                 error_msg = str(e)
                 logger.error(
-                    "describe_draft generation error session=%s attempt=%d error=%s",
-                    session_id, attempt + 1, error_msg,
+                    "describe_draft generation error session=%s attempt=%d regenerate=%s error=%s",
+                    session_id, attempt + 1, effective_regenerate, error_msg,
                 )
                 error_type = (
                     DescribeDraftErrorType.RATE_LIMITED
@@ -454,28 +513,36 @@ async def generate_describe_draft(prompt: str, session_id: str) -> DescribeDraft
         units_generated = len(versions_out)
 
     # 6. Write session memory
-    if mode == "single_clause" and versions_out:
-        # Track the clause the user just drafted (first version's title)
+    is_regenerate_hit = (
+        mode == "single_clause"
+        and regenerate
+        and stored_last_version is not None
+    )
+    if mode == "single_clause" and versions_out and not is_regenerate_hit:
+        # Fresh draft: track the clause title in prior_clauses for future context.
         new_titles = [versions_out[0].title]
     else:
-        # list_of_clauses: don't add all clauses to prior (noisy); just record agreement_type
+        # Regenerate (same clause) or list_of_clauses: don't append to prior_clauses.
         new_titles = []
     _write_session_context(
         session_id=session_id,
         agreement_type=effective_agreement_type,
         new_clause_titles=new_titles,
         clear_prior=clear_prior,
+        last_version=versions_out[0] if (mode == "single_clause" and versions_out) else None,
+        clear_last_version=(mode == "list_of_clauses"),
     )
 
     # 7. Audit log (per-call token usage is emitted by the LLM client)
     latency_ms = int((time.time() - start_time) * 1000)
     logger.info(
         "describe_draft_audit session=%s mode=%s agreement_type=%s "
-        "units_generated=%d latency_ms=%d",
+        "units_generated=%d regenerate=%s latency_ms=%d",
         session_id,
         mode,
         effective_agreement_type or "unknown",
         units_generated,
+        is_regenerate_hit,
         latency_ms,
     )
 
@@ -485,4 +552,5 @@ async def generate_describe_draft(prompt: str, session_id: str) -> DescribeDraft
         status="ok",
         clauses=clauses_out,
         versions=versions_out,
+        regenerated=is_regenerate_hit,
     )

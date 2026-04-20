@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.schemas.describe_draft import (
+    ClauseListEntry,
+    ClauseListLLMResponse,
     ClauseVersion,
     DescribeDraftErrorType,
     DescribeDraftLLMResponse,
@@ -19,22 +21,33 @@ from src.schemas.describe_draft import (
 from src.tools.drafter import generate_describe_draft
 
 
-def _make_clause_version(index: int, mode: str) -> ClauseVersion:
-    drafted = "" if mode == "list_of_clauses" else (
-        f"Version {index}: This clause governs the treatment of Confidential Information "
-        f"disclosed between the parties. The receiving party shall maintain such information "
-        f"in strict confidence. " * 3
+def _make_clause_version(
+    title: str = "Confidentiality Obligations",
+    summary: str = "A mutual confidentiality undertaking with standard carve-outs.",
+    drafted_clause: Optional[str] = None,
+) -> ClauseVersion:
+    clause_text = drafted_clause or (
+        "This clause governs the treatment of Confidential Information disclosed "
+        "between the parties. The receiving party shall maintain such information "
+        "in strict confidence and shall not disclose it to any third party without "
+        "the prior written consent of the disclosing party. " * 2
     )
-    return ClauseVersion(
-        title=f"Version {index} Title",
-        summary=f"A {mode} version {index} summary.",
-        drafted_clause=drafted,
-    )
+    return ClauseVersion(title=title, summary=summary, drafted_clause=clause_text)
 
 
-def _make_llm_response(mode: str) -> DescribeDraftLLMResponse:
-    return DescribeDraftLLMResponse(
-        versions=[_make_clause_version(i + 1, mode) for i in range(5)]
+def _make_single_draft_response(**kwargs) -> DescribeDraftLLMResponse:
+    return DescribeDraftLLMResponse(versions=[_make_clause_version(**kwargs)])
+
+
+def _make_list_response(n: int = 13) -> ClauseListLLMResponse:
+    return ClauseListLLMResponse(
+        clauses=[
+            ClauseListEntry(
+                title=f"Clause {i + 1} — Definitions" if i == 0 else f"Clause {i + 1} — Topic {i}",
+                summary=f"A one-sentence description for clause {i + 1}.",
+            )
+            for i in range(n)
+        ]
     )
 
 
@@ -48,12 +61,13 @@ def _make_classification(mode: str, agreement_type: Optional[str] = "NDA") -> In
 
 def _build_mock_container(
     classification: IntentClassification,
-    llm_response: Optional[DescribeDraftLLMResponse] = None,
+    llm_response=None,
+    initial_metadata: Optional[dict] = None,
 ) -> MagicMock:
     """Build a mock service container with a mock AzureOpenAIModel."""
     container = MagicMock()
     session_data = MagicMock()
-    session_data.metadata = {}
+    session_data.metadata = dict(initial_metadata or {})
     container.session_manager.get_or_create_session.return_value = session_data
 
     call_count = 0
@@ -62,22 +76,19 @@ def _build_mock_container(
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            # First call: classifier
-            return classification
-        else:
-            # Second call: generation
-            if llm_response is not None:
-                return llm_response
-            raise ValueError("No LLM response configured")
+            return classification  # classifier call
+        if llm_response is not None:
+            return llm_response
+        raise ValueError("No LLM response configured")
 
     container.azure_openai_model.generate = AsyncMock(side_effect=generate_side_effect)
     return container
 
 
 @pytest.mark.asyncio
-async def test_single_clause_mode_returns_5_versions():
+async def test_single_clause_mode_returns_one_draft():
     classification = _make_classification("single_clause", "NDA")
-    llm_response = _make_llm_response("single_clause")
+    llm_response = _make_single_draft_response()
     mock_container = _build_mock_container(classification, llm_response)
 
     with patch("src.tools.drafter.get_service_container", return_value=mock_container):
@@ -88,17 +99,18 @@ async def test_single_clause_mode_returns_5_versions():
 
     assert response.status == "ok"
     assert response.mode == "single_clause"
-    assert len(response.versions) == 5
-    assert all(v.drafted_clause.strip() for v in response.versions), "All drafted_clauses must be non-empty for single_clause mode"
+    assert len(response.versions) == 1
+    assert response.versions[0].drafted_clause.strip(), "drafted_clause must be non-empty"
     assert response.clarification_question is None
     assert response.error_type is None
     assert response.disclaimer is not None
+    assert response.regenerated is False
 
 
 @pytest.mark.asyncio
-async def test_list_of_clauses_mode_returns_5_versions():
+async def test_list_of_clauses_mode_returns_clause_list():
     classification = _make_classification("list_of_clauses", "NDA")
-    llm_response = _make_llm_response("list_of_clauses")
+    llm_response = _make_list_response(n=14)
     mock_container = _build_mock_container(classification, llm_response)
 
     with patch("src.tools.drafter.get_service_container", return_value=mock_container):
@@ -109,7 +121,8 @@ async def test_list_of_clauses_mode_returns_5_versions():
 
     assert response.status == "ok"
     assert response.mode == "list_of_clauses"
-    assert len(response.versions) == 5
+    assert len(response.clauses) == 14
+    assert response.versions == []
     assert response.disclaimer is not None
 
 
@@ -135,11 +148,9 @@ async def test_clarification_mode_returns_no_versions():
 async def test_validation_failure_triggers_retry_then_error():
     """When LLM returns wrong number of versions, tool retries once then returns error."""
     classification = _make_classification("single_clause", "NDA")
-    # Return 4 versions (invalid) on both attempts. Use model_construct to bypass
-    # Pydantic's min_length=5 enforcement so the post-generation validator is exercised.
-    bad_response = DescribeDraftLLMResponse.model_construct(
-        versions=[_make_clause_version(i + 1, "single_clause") for i in range(4)]
-    )
+    # Return 0 versions (invalid) on both attempts. Use model_construct to bypass
+    # Pydantic's min_length=1 enforcement so the post-generation validator fires.
+    bad_response = DescribeDraftLLMResponse.model_construct(versions=[])
 
     call_count = 0
 
@@ -148,7 +159,7 @@ async def test_validation_failure_triggers_retry_then_error():
         call_count += 1
         if call_count == 1:
             return classification
-        return bad_response  # always 4 versions
+        return bad_response  # always 0 versions
 
     mock_container = MagicMock()
     session_data = MagicMock()
@@ -191,9 +202,9 @@ async def test_injection_rejected_before_llm_call():
 
 @pytest.mark.asyncio
 async def test_session_memory_written_after_successful_generation():
-    """After successful generation, session.metadata must contain agreement_type and prior_clauses."""
+    """After successful generation, session stores agreement_type, prior_clauses, and last draft."""
     classification = _make_classification("single_clause", "NDA")
-    llm_response = _make_llm_response("single_clause")
+    llm_response = _make_single_draft_response(title="Confidentiality Obligations")
     mock_container = _build_mock_container(classification, llm_response)
     session_metadata = mock_container.session_manager.get_or_create_session.return_value.metadata
 
@@ -204,10 +215,11 @@ async def test_session_memory_written_after_successful_generation():
         )
 
     assert response.status == "ok"
-    assert "draft_agreement_type" in session_metadata
-    assert session_metadata["draft_agreement_type"] == "NDA"
-    assert "draft_prior_clauses" in session_metadata
-    assert isinstance(session_metadata["draft_prior_clauses"], list)
+    assert session_metadata.get("draft_agreement_type") == "NDA"
+    assert isinstance(session_metadata.get("draft_prior_clauses"), list)
+    assert "Confidentiality Obligations" in session_metadata["draft_prior_clauses"]
+    assert isinstance(session_metadata.get("draft_last_version"), dict)
+    assert session_metadata["draft_last_version"]["title"] == "Confidentiality Obligations"
 
 
 @pytest.mark.asyncio
@@ -238,3 +250,131 @@ async def test_llm_failure_returns_llm_failed_error():
 
     assert response.status == "error"
     assert response.error_type in (DescribeDraftErrorType.LLM_FAILED, DescribeDraftErrorType.RATE_LIMITED)
+
+
+# --- Regenerate flow ---
+
+@pytest.mark.asyncio
+async def test_regenerate_without_prior_draft_acts_as_fresh_call():
+    """regenerate=true with no stored prior draft should still succeed as a fresh draft."""
+    classification = _make_classification("single_clause", "NDA")
+    llm_response = _make_single_draft_response()
+    mock_container = _build_mock_container(classification, llm_response, initial_metadata={})
+
+    with patch("src.tools.drafter.get_service_container", return_value=mock_container):
+        response = await generate_describe_draft(
+            prompt="Draft a confidentiality clause",
+            session_id="test-session-regen-1",
+            regenerate=True,
+        )
+
+    assert response.status == "ok"
+    assert response.mode == "single_clause"
+    assert len(response.versions) == 1
+    # No prior draft in session → regenerated flag is False
+    assert response.regenerated is False
+
+
+@pytest.mark.asyncio
+async def test_regenerate_with_prior_draft_produces_different_version_and_marks_regenerated():
+    """regenerate=true + prior draft in session → LLM called with prior draft context; response.regenerated=True."""
+    classification = _make_classification("single_clause", "NDA")
+    # The "regenerated" version must differ from the prior; use distinct text.
+    new_version = _make_clause_version(
+        title="Confidentiality Obligations",
+        summary="A tighter, carve-out-first confidentiality undertaking.",
+        drafted_clause=(
+            "Receiving Party shall (a) hold Confidential Information in strict confidence, "
+            "(b) use it solely for the Permitted Purpose, and (c) return or destroy it on "
+            "written request. Carve-outs apply for publicly available information, independently "
+            "developed information, and information required to be disclosed by law."
+        ),
+    )
+    llm_response = DescribeDraftLLMResponse(versions=[new_version])
+
+    prior_stored = {
+        "title": "Confidentiality Obligations",
+        "summary": "A broad standard confidentiality undertaking.",
+        "drafted_clause": "The Receiving Party agrees to keep the information confidential. " * 5,
+    }
+    mock_container = _build_mock_container(
+        classification,
+        llm_response,
+        initial_metadata={
+            "draft_agreement_type": "NDA",
+            "draft_prior_clauses": ["Confidentiality Obligations"],
+            "draft_last_version": prior_stored,
+        },
+    )
+
+    with patch("src.tools.drafter.get_service_container", return_value=mock_container):
+        response = await generate_describe_draft(
+            prompt="Draft a confidentiality clause",
+            session_id="test-session-regen-2",
+            regenerate=True,
+        )
+
+    assert response.status == "ok"
+    assert response.mode == "single_clause"
+    assert response.regenerated is True
+    assert response.versions[0].drafted_clause != prior_stored["drafted_clause"]
+
+    # Regenerate should NOT append a second copy of the same clause title to prior_clauses.
+    metadata = mock_container.session_manager.get_or_create_session.return_value.metadata
+    assert metadata["draft_prior_clauses"].count("Confidentiality Obligations") == 1
+    # Session should now hold the NEW draft as last_version.
+    assert metadata["draft_last_version"]["drafted_clause"] == new_version.drafted_clause
+
+
+@pytest.mark.asyncio
+async def test_regenerate_returning_identical_draft_triggers_validation_retry():
+    """If the LLM echoes the prior draft, validation must fail and the tool must retry."""
+    classification = _make_classification("single_clause", "NDA")
+
+    prior_clause_text = (
+        "The Receiving Party shall treat all Confidential Information received from the "
+        "Disclosing Party in strict confidence and shall not use it for any purpose other "
+        "than the Permitted Purpose. This obligation survives termination. " * 2
+    )
+    prior_stored = {
+        "title": "Confidentiality Obligations",
+        "summary": "A standard confidentiality undertaking.",
+        "drafted_clause": prior_clause_text,
+    }
+    identical = ClauseVersion(
+        title="Confidentiality Obligations",
+        summary="A standard confidentiality undertaking.",
+        drafted_clause=prior_clause_text,
+    )
+    bad_llm_response = DescribeDraftLLMResponse(versions=[identical])
+
+    call_count = 0
+
+    async def generate_side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return classification
+        return bad_llm_response
+
+    mock_container = MagicMock()
+    session_data = MagicMock()
+    session_data.metadata = {
+        "draft_agreement_type": "NDA",
+        "draft_prior_clauses": ["Confidentiality Obligations"],
+        "draft_last_version": prior_stored,
+    }
+    mock_container.session_manager.get_or_create_session.return_value = session_data
+    mock_container.azure_openai_model.generate = AsyncMock(side_effect=generate_side_effect)
+
+    with patch("src.tools.drafter.get_service_container", return_value=mock_container):
+        response = await generate_describe_draft(
+            prompt="Draft a confidentiality clause",
+            session_id="test-session-regen-3",
+            regenerate=True,
+        )
+
+    assert response.status == "error"
+    assert response.error_type == DescribeDraftErrorType.VALIDATION_FAILED
+    # 1 classifier + 2 generation attempts (both returning identical drafts).
+    assert mock_container.azure_openai_model.generate.call_count == 3
