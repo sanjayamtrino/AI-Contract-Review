@@ -11,6 +11,23 @@ Clauses already drafted in this session:
 {{#is_single_clause}}
 TASK: {{mode_instruction}}
 
+{{#has_doc_grounding}}
+DOCUMENT CONTEXT: A contract has been uploaded to this session. The drafted clause MUST be drop-in ready for that contract — no placeholders, no square-bracket party tokens.
+
+Parties (use these EXACT names; do not invent or abbreviate):
+{{doc_parties_block}}
+
+Governing law (align the clause with this; do not contradict):
+{{doc_governing_law}}
+
+{{#has_relevant_chunks}}
+Relevant existing text from the uploaded document (for style and defined-term consistency only — do NOT copy verbatim unless the user asked to mirror an existing clause):
+---
+{{doc_relevant_chunks}}
+---
+{{/has_relevant_chunks}}
+{{/has_doc_grounding}}
+
 {{#is_regenerate}}
 REGENERATE MODE: The user previously received the draft below and clicked REGENERATE because they wanted a better or different take. Produce ONE new version that is MEANINGFULLY DIFFERENT and an IMPROVEMENT on the previous draft — not a rephrasing. Vary structure, wording, emphasis, carve-outs, remedies, and clause ordering. Tighten where the prior was loose; expand where it was thin.
 
@@ -34,6 +51,10 @@ HARD RULES (violations will cause a retry):
 - No archaic legalese: never use "witnesseth", "party of the first part", "party of the second part", "in witness whereof", "now therefore", "know all men by these presents".
 - Defined terms must be consistently capitalized.
 - Titles and summaries must describe the clause content, not stylistic axes (no "balanced version", "protective version", "version 1", etc.).
+{{#has_doc_grounding}}
+- Use the EXACT party names listed above. Do not substitute "Party A", "[CUSTOMER]", "the Company", or any placeholder form.
+- Do not change or contradict the governing law stated above.
+{{/has_doc_grounding}}
 {{#is_regenerate}}
 - The draft MUST be materially different from the previous draft above. Substantive changes to wording, structure, and emphasis — not a synonym swap.
 {{/is_regenerate}}

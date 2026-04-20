@@ -67,6 +67,36 @@ class ClauseListLLMResponse(BaseModel):
     )
 
 
+class DuplicateCheckResult(BaseModel):
+    """LLM output for duplicate-clause detection against an uploaded document."""
+
+    is_duplicate: bool = Field(
+        description=(
+            "True if the candidate text is already a clause on the same topic "
+            "as the user's drafting request."
+        )
+    )
+    matched_title: Optional[str] = Field(
+        default=None,
+        description="Heading/title of the existing clause, if one is discernible.",
+    )
+
+
+class ExistingClauseMatch(BaseModel):
+    """Describes a clause already present in the uploaded document that matches the request."""
+
+    title: Optional[str] = Field(
+        default=None,
+        description="Heading or inferred title of the existing clause.",
+    )
+    excerpt: str = Field(
+        description="Verbatim text of the existing clause as pulled from the document."
+    )
+    similarity_score: float = Field(
+        description="Retrieval similarity score of the matched chunk."
+    )
+
+
 class DescribeDraftLLMResponse(BaseModel):
     """Raw LLM output for single_clause mode — exactly 1 ClauseVersion per call.
 
@@ -96,13 +126,19 @@ class DescribeDraftResponse(BaseModel):
     """Public API response from the describe-draft endpoint.
 
     Which field is populated depends on `mode`:
-      - list_of_clauses → `clauses` (the full clause list for the agreement type)
-      - single_clause   → `versions` (exactly 1 drafted version per call; regenerate for more)
-      - clarification   → `clarification_question` (no generation)
+      - list_of_clauses      → `clauses` (the full clause list for the agreement type)
+      - single_clause        → `versions` (exactly 1 drafted version per call; regenerate for more)
+      - single_clause_exists → `existing_clause` (the matching clause already in the uploaded doc)
+      - clarification        → `clarification_question` (no generation)
     """
 
     session_id: str
-    mode: Literal["list_of_clauses", "single_clause", "clarification"]
+    mode: Literal[
+        "list_of_clauses",
+        "single_clause",
+        "single_clause_exists",
+        "clarification",
+    ]
     status: Literal["ok", "error"]
     disclaimer: Optional[str] = "AI-generated draft. Subject to attorney review before use."
     clarification_question: Optional[str] = None
@@ -114,9 +150,23 @@ class DescribeDraftResponse(BaseModel):
         default_factory=list,
         description="Populated only in single_clause mode — 1 entry per call.",
     )
+    existing_clause: Optional[ExistingClauseMatch] = Field(
+        default=None,
+        description=(
+            "Populated only in single_clause_exists mode — the matching clause "
+            "already present in the uploaded document."
+        ),
+    )
     regenerated: bool = Field(
         default=False,
         description="True when this response was produced by a regenerate call.",
+    )
+    grounded_in_document: bool = Field(
+        default=False,
+        description=(
+            "True when a document was attached to the session and the draft was grounded "
+            "in it (parties, governing law, and relevant existing clauses)."
+        ),
     )
     error_type: Optional[DescribeDraftErrorType] = None
     error_message: Optional[str] = None
