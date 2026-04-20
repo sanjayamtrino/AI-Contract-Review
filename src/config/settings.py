@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     logs_directory: str = Field(default="./logs", description="Directory for application logs")
 
     # Session Management settings
-    session_ttl_minutes: int = Field(default=2, description="Session TTL in minutes (default: 2 hours)")
-    session_cleanup_interval_minutes: float = Field(default=1.0, description="How often to check for expired sessions (default: 10 minutes)")
+    session_ttl_minutes: int = Field(default=120, description="Session TTL in minutes (default: 2 hours)")
+    session_cleanup_interval_minutes: float = Field(default=10.0, description="How often to check for expired sessions (default: 10 minutes)")
 
     class Config:
         env_file = ".env"

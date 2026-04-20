@@ -10,6 +10,8 @@ from typing import List, Optional
 
 from src.dependencies import get_service_container
 from src.schemas.describe_draft import (
+    ClauseListEntry,
+    ClauseListLLMResponse,
     ClauseVersion,
     DescribeDraftErrorType,
     DescribeDraftLLMResponse,
@@ -28,6 +30,31 @@ _BANNED_PHRASES = [
     "in witness whereof",
     "now therefore",
     "know all men by these presents",
+]
+
+# Axis-label patterns that must not leak into titles or summaries (case-insensitive
+# substring match). These target phrases the LLM uses when it labels a VERSION
+# by its axis, not legitimate legal vocabulary.
+_BANNED_TITLE_SUMMARY_WORDS = [
+    "party a-focused",
+    "party b-focused",
+    "party a-weighted",
+    "party b-weighted",
+    "weighted toward party",
+    "version 1",
+    "version 2",
+    "version 3",
+    "version 4",
+    "version 5",
+    "balanced version",
+    "protective version",
+    "plain-english version",
+    "plain english version",
+    "exhaustive version",
+    "comprehensive version",
+    "minimal version",
+    "essential version",
+    "belt-and-suspenders",
 ]
 
 # Max prompt length (must match schema Field max_length)
@@ -55,12 +82,12 @@ def _sanitize_prompt(prompt: str) -> str:
 
 
 def _validate_draft_response(response: DescribeDraftLLMResponse) -> None:
-    """Raise ValueError with a specific message on any validation failure.
+    """Validate single_clause mode output: exactly 5 versions, each a full clause.
 
     Checks:
       - exactly 5 versions
       - non-empty title and summary on every version
-      - drafted_clause (when present) is at least 50 chars and contains no banned phrases
+      - drafted_clause is at least 50 chars and contains no banned phrases or axis labels
     """
     if len(response.versions) != 5:
         raise ValueError(f"Expected 5 versions, got {len(response.versions)}")
@@ -70,19 +97,62 @@ def _validate_draft_response(response: DescribeDraftLLMResponse) -> None:
             raise ValueError(f"Version {idx}: title is empty")
         if not version.summary or not version.summary.strip():
             raise ValueError(f"Version {idx}: summary is empty")
-        # drafted_clause may be empty for list_of_clauses mode — check only if present
-        if version.drafted_clause.strip():
-            if len(version.drafted_clause) < 50:
+
+        # Axis-label leakage check — titles and summaries must describe content, not style
+        title_lower = version.title.lower()
+        summary_lower = version.summary.lower()
+        for word in _BANNED_TITLE_SUMMARY_WORDS:
+            if word in title_lower:
                 raise ValueError(
-                    f"Version {idx}: drafted_clause suspiciously short "
-                    f"({len(version.drafted_clause)} chars)"
+                    f"Version {idx}: title contains forbidden axis label '{word}'"
                 )
-            lower = version.drafted_clause.lower()
-            for phrase in _BANNED_PHRASES:
-                if phrase in lower:
-                    raise ValueError(
-                        f"Version {idx}: banned phrase '{phrase}' found in drafted_clause"
-                    )
+            if word in summary_lower:
+                raise ValueError(
+                    f"Version {idx}: summary contains forbidden axis label '{word}'"
+                )
+
+        if not version.drafted_clause.strip():
+            raise ValueError(f"Version {idx}: drafted_clause is empty")
+        if len(version.drafted_clause) < 50:
+            raise ValueError(
+                f"Version {idx}: drafted_clause suspiciously short "
+                f"({len(version.drafted_clause)} chars)"
+            )
+        lower = version.drafted_clause.lower()
+        for phrase in _BANNED_PHRASES:
+            if phrase in lower:
+                raise ValueError(
+                    f"Version {idx}: banned phrase '{phrase}' found in drafted_clause"
+                )
+
+
+def _validate_clause_list(response: ClauseListLLMResponse) -> None:
+    """Validate list_of_clauses mode output: one complete clause list (≥12 clauses)."""
+    if len(response.clauses) < 12:
+        raise ValueError(
+            f"Expected at least 12 clauses for a complete agreement, "
+            f"got {len(response.clauses)}"
+        )
+    seen_titles: set = set()
+    for i, clause in enumerate(response.clauses):
+        idx = i + 1
+        if not clause.title or not clause.title.strip():
+            raise ValueError(f"Clause {idx}: title is empty")
+        if not clause.summary or not clause.summary.strip():
+            raise ValueError(f"Clause {idx}: summary is empty")
+
+        title_norm = clause.title.strip().lower()
+        if title_norm in seen_titles:
+            raise ValueError(f"Clause {idx}: duplicate title '{clause.title}'")
+        seen_titles.add(title_norm)
+
+        # No archaic legalese in summaries
+        summary_lower = clause.summary.lower()
+        for phrase in _BANNED_PHRASES:
+            if phrase in summary_lower:
+                raise ValueError(
+                    f"Clause {idx}: banned phrase '{phrase}' found in summary"
+                )
 
 
 async def _classify_intent(prompt: str) -> IntentClassification:
@@ -100,28 +170,23 @@ async def _classify_intent(prompt: str) -> IntentClassification:
     )
 
 
-async def _generate_versions(
+async def _generate_clause_versions(
     prompt: str,
-    mode: str,
     agreement_type: Optional[str],
     prior_clauses: List[str],
 ) -> DescribeDraftLLMResponse:
+    """single_clause mode: generate exactly 5 versions of one clause."""
     container = get_service_container()
     llm = container.azure_openai_model
-    is_single = mode == "single_clause"
-    temperature = 0.15 if is_single else 0.1
     mode_instruction = (
         f"Draft a {agreement_type or 'legal'} clause as requested by the user."
-        if is_single
-        else f"List the clauses that should appear in a "
-             f"{agreement_type or 'legal agreement'} as requested by the user."
     )
     context = {
         "user_prompt": prompt,
-        "mode": mode,
+        "mode": "single_clause",
         "mode_instruction": mode_instruction,
-        "is_single_clause": is_single,
-        "is_list_of_clauses": not is_single,
+        "is_single_clause": True,
+        "is_list_of_clauses": False,
         "agreement_type": agreement_type or "",
         "has_agreement_type": bool(agreement_type),
         "prior_clauses": "\n".join(prior_clauses) if prior_clauses else "",
@@ -138,7 +203,44 @@ async def _generate_versions(
             "No archaic legalese. Consistent defined-term capitalization within each version. "
             "Return ONLY valid JSON matching the schema."
         ),
-        temperature=temperature,
+        temperature=0.15,
+    )
+
+
+async def _generate_clause_list(
+    prompt: str,
+    agreement_type: Optional[str],
+    prior_clauses: List[str],
+) -> ClauseListLLMResponse:
+    """list_of_clauses mode: return ONE comprehensive clause list for the agreement type."""
+    container = get_service_container()
+    llm = container.azure_openai_model
+    mode_instruction = (
+        f"List all clauses that should appear in a "
+        f"{agreement_type or 'legal agreement'} as requested by the user."
+    )
+    context = {
+        "user_prompt": prompt,
+        "mode": "list_of_clauses",
+        "mode_instruction": mode_instruction,
+        "is_single_clause": False,
+        "is_list_of_clauses": True,
+        "agreement_type": agreement_type or "",
+        "has_agreement_type": bool(agreement_type),
+        "prior_clauses": "\n".join(prior_clauses) if prior_clauses else "",
+        "has_prior_clauses": bool(prior_clauses),
+    }
+    rendered = load_prompt("describe_draft_generation_prompt", context=context)
+    return await llm.generate(
+        prompt=rendered,
+        context={},
+        response_model=ClauseListLLMResponse,
+        system_message=(
+            "You are an expert legal drafter. Return ONE complete clause list for the "
+            "requested agreement type. Do NOT return multiple versions. "
+            "Return ONLY valid JSON matching the schema."
+        ),
+        temperature=0.1,
     )
 
 
@@ -239,60 +341,125 @@ async def generate_describe_draft(prompt: str, session_id: str) -> DescribeDraft
         and detected_agreement_type.lower() != stored_agreement_type.lower()
     )
 
-    # 5. Generate 5 versions — with one retry on validation failure
-    llm_response: Optional[DescribeDraftLLMResponse] = None
+    # 5. Generate — branch on mode
     validation_error: Optional[str] = None
-    for attempt in range(2):
-        try:
-            raw = await _generate_versions(
-                prompt=clean_prompt,
-                mode=mode,
-                agreement_type=effective_agreement_type,
-                prior_clauses=prior_clauses if not clear_prior else [],
-            )
-            _validate_draft_response(raw)
-            llm_response = raw
-            break
-        except ValueError as ve:
-            validation_error = str(ve)
-            logger.warning(
-                "describe_draft validation failed session=%s attempt=%d error=%s",
-                session_id, attempt + 1, validation_error,
-            )
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(
-                "describe_draft generation error session=%s attempt=%d error=%s",
-                session_id, attempt + 1, error_msg,
-            )
-            error_type = (
-                DescribeDraftErrorType.RATE_LIMITED
-                if "rate" in error_msg.lower()
-                else DescribeDraftErrorType.LLM_FAILED
-            )
+    clauses_out: List[ClauseListEntry] = []
+    versions_out: List[ClauseVersion] = []
+    units_generated = 0
+
+    if mode == "list_of_clauses":
+        list_response: Optional[ClauseListLLMResponse] = None
+        for attempt in range(2):
+            try:
+                raw_list = await _generate_clause_list(
+                    prompt=clean_prompt,
+                    agreement_type=effective_agreement_type,
+                    prior_clauses=prior_clauses if not clear_prior else [],
+                )
+                _validate_clause_list(raw_list)
+                list_response = raw_list
+                break
+            except ValueError as ve:
+                validation_error = str(ve)
+                logger.warning(
+                    "describe_draft list validation failed session=%s attempt=%d error=%s",
+                    session_id, attempt + 1, validation_error,
+                )
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(
+                    "describe_draft list generation error session=%s attempt=%d error=%s",
+                    session_id, attempt + 1, error_msg,
+                )
+                error_type = (
+                    DescribeDraftErrorType.RATE_LIMITED
+                    if "rate" in error_msg.lower()
+                    else DescribeDraftErrorType.LLM_FAILED
+                )
+                return DescribeDraftResponse(
+                    session_id=session_id,
+                    mode=mode,
+                    status="error",
+                    disclaimer=None,
+                    error_type=error_type,
+                    error_message=f"LLM generation failed: {error_msg}",
+                )
+
+        if list_response is None:
             return DescribeDraftResponse(
                 session_id=session_id,
                 mode=mode,
                 status="error",
                 disclaimer=None,
-                error_type=error_type,
-                error_message=f"LLM generation failed: {error_msg}",
+                error_type=DescribeDraftErrorType.VALIDATION_FAILED,
+                error_message=(
+                    f"Clause-list validation failed after 2 attempts: {validation_error}"
+                ),
             )
 
-    if llm_response is None:
-        return DescribeDraftResponse(
-            session_id=session_id,
-            mode=mode,
-            status="error",
-            disclaimer=None,
-            error_type=DescribeDraftErrorType.VALIDATION_FAILED,
-            error_message=(
-                f"Generation validation failed after 2 attempts: {validation_error}"
-            ),
-        )
+        clauses_out = list_response.clauses
+        units_generated = len(clauses_out)
+    else:
+        # single_clause mode — 5 versions with retry
+        versions_response: Optional[DescribeDraftLLMResponse] = None
+        for attempt in range(2):
+            try:
+                raw = await _generate_clause_versions(
+                    prompt=clean_prompt,
+                    agreement_type=effective_agreement_type,
+                    prior_clauses=prior_clauses if not clear_prior else [],
+                )
+                _validate_draft_response(raw)
+                versions_response = raw
+                break
+            except ValueError as ve:
+                validation_error = str(ve)
+                logger.warning(
+                    "describe_draft validation failed session=%s attempt=%d error=%s",
+                    session_id, attempt + 1, validation_error,
+                )
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(
+                    "describe_draft generation error session=%s attempt=%d error=%s",
+                    session_id, attempt + 1, error_msg,
+                )
+                error_type = (
+                    DescribeDraftErrorType.RATE_LIMITED
+                    if "rate" in error_msg.lower()
+                    else DescribeDraftErrorType.LLM_FAILED
+                )
+                return DescribeDraftResponse(
+                    session_id=session_id,
+                    mode=mode,
+                    status="error",
+                    disclaimer=None,
+                    error_type=error_type,
+                    error_message=f"LLM generation failed: {error_msg}",
+                )
 
-    # 6. Write session memory (store first version's title as representative)
-    new_titles = [v.title for v in llm_response.versions[:1]]
+        if versions_response is None:
+            return DescribeDraftResponse(
+                session_id=session_id,
+                mode=mode,
+                status="error",
+                disclaimer=None,
+                error_type=DescribeDraftErrorType.VALIDATION_FAILED,
+                error_message=(
+                    f"Generation validation failed after 2 attempts: {validation_error}"
+                ),
+            )
+
+        versions_out = versions_response.versions
+        units_generated = len(versions_out)
+
+    # 6. Write session memory
+    if mode == "single_clause" and versions_out:
+        # Track the clause the user just drafted (first version's title)
+        new_titles = [versions_out[0].title]
+    else:
+        # list_of_clauses: don't add all clauses to prior (noisy); just record agreement_type
+        new_titles = []
     _write_session_context(
         session_id=session_id,
         agreement_type=effective_agreement_type,
@@ -300,17 +467,15 @@ async def generate_describe_draft(prompt: str, session_id: str) -> DescribeDraft
         clear_prior=clear_prior,
     )
 
-    # 7. Audit log
+    # 7. Audit log (per-call token usage is emitted by the LLM client)
     latency_ms = int((time.time() - start_time) * 1000)
     logger.info(
         "describe_draft_audit session=%s mode=%s agreement_type=%s "
-        "versions_generated=%d input_tokens=%d output_tokens=%d latency_ms=%d",
+        "units_generated=%d latency_ms=%d",
         session_id,
         mode,
         effective_agreement_type or "unknown",
-        len(llm_response.versions),
-        0,  # input_tokens not exposed by current llm.generate() return value
-        0,  # output_tokens not exposed by current llm.generate() return value
+        units_generated,
         latency_ms,
     )
 
@@ -318,5 +483,6 @@ async def generate_describe_draft(prompt: str, session_id: str) -> DescribeDraft
         session_id=session_id,
         mode=mode,
         status="ok",
-        versions=llm_response.versions,
+        clauses=clauses_out,
+        versions=versions_out,
     )

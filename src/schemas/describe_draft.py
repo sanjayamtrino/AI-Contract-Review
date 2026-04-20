@@ -27,18 +27,37 @@ class IntentClassification(BaseModel):
     clarification_question: Optional[str] = None  # populated when mode == "clarification"
 
 
+class ClauseListEntry(BaseModel):
+    """One clause entry in the agreement's full clause list (list_of_clauses mode)."""
+
+    title: str = Field(description="Clause name (e.g. 'Confidentiality Obligations')")
+    summary: str = Field(
+        description="One-sentence description of what this clause covers"
+    )
+
+
 class ClauseVersion(BaseModel):
-    """One of the 5 versions returned by the generation call."""
+    """One of the 5 drafted versions of a single clause (single_clause mode only)."""
 
     title: str = Field(description="Clause name or title")
-    summary: str = Field(description="One-sentence summary of what this clause covers")
-    drafted_clause: str = Field(
-        description="Full drafted clause text. Empty string for list_of_clauses mode versions."
+    summary: str = Field(description="One-sentence summary of this version's approach")
+    drafted_clause: str = Field(description="The full drafted clause text")
+
+
+class ClauseListLLMResponse(BaseModel):
+    """Raw LLM output for list_of_clauses mode — one complete clause list."""
+
+    clauses: List[ClauseListEntry] = Field(
+        min_length=8,
+        description=(
+            "Complete list of clauses for the requested agreement type. "
+            "Minimum 8; prompt requests 12+ for most agreements."
+        ),
     )
 
 
 class DescribeDraftLLMResponse(BaseModel):
-    """Raw LLM output: exactly 5 ClauseVersions."""
+    """Raw LLM output for single_clause mode — exactly 5 ClauseVersions."""
 
     versions: List[ClauseVersion] = Field(
         min_length=5,
@@ -60,13 +79,26 @@ class DescribeDraftErrorType(str, Enum):
 
 
 class DescribeDraftResponse(BaseModel):
-    """Public API response from the describe-draft endpoint."""
+    """Public API response from the describe-draft endpoint.
+
+    Which field is populated depends on `mode`:
+      - list_of_clauses → `clauses` (the full clause list for the agreement type)
+      - single_clause   → `versions` (exactly 5 drafted versions of the requested clause)
+      - clarification   → `clarification_question` (no generation)
+    """
 
     session_id: str
     mode: Literal["list_of_clauses", "single_clause", "clarification"]
     status: Literal["ok", "error"]
     disclaimer: Optional[str] = "AI-generated draft. Subject to attorney review before use."
     clarification_question: Optional[str] = None
-    versions: List[ClauseVersion] = Field(default_factory=list)
+    clauses: List[ClauseListEntry] = Field(
+        default_factory=list,
+        description="Populated only in list_of_clauses mode.",
+    )
+    versions: List[ClauseVersion] = Field(
+        default_factory=list,
+        description="Populated only in single_clause mode (exactly 5).",
+    )
     error_type: Optional[DescribeDraftErrorType] = None
     error_message: Optional[str] = None

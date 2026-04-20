@@ -8,41 +8,63 @@ Clauses already drafted in this session:
 {{prior_clauses}}
 {{/has_prior_clauses}}
 
+{{#is_single_clause}}
 TASK: {{mode_instruction}}
 
-Generate exactly 5 versions. Each version must be meaningfully different from the others.
-Vary them along these internal axes (do NOT mention or label these axes in your output):
-{{#is_single_clause}}
-  Version 1: balanced/market-standard
-  Version 2: protective of the party engaging the drafter (Party A)
-  Version 3: protective of the counterparty (Party B)
-  Version 4: plain-English/concise (minimal legalese, accessible language)
-  Version 5: comprehensive/protective (belt-and-suspenders, covers edge cases)
-{{/is_single_clause}}
-{{#is_list_of_clauses}}
-  Version 1: standard/market-typical clause set
-  Version 2: minimal/essential-only clause set
-  Version 3: comprehensive/exhaustive clause set
-  Version 4: clause set weighted toward Party A protection
-  Version 5: clause set weighted toward Party B protection
-{{/is_list_of_clauses}}
+Generate exactly 5 versions of THIS SINGLE CLAUSE. Each version must be meaningfully different from the others in content.
+
+Vary the 5 versions along these internal shaping directions (DO NOT name or describe these directions in the output):
+  - one balanced / market-standard version
+  - one version more protective of the drafter's party
+  - one version more protective of the counterparty
+  - one plain-English / concise version (minimal legalese)
+  - one exhaustive / belt-and-suspenders version covering edge cases
+
+For mutual or bilateral agreements, all 5 versions must remain balanced between the parties — vary by scope, remedies depth, carve-outs, and wording style, NOT by who is favored.
+
+For each version provide:
+  - title: the clause name (e.g. "Confidentiality", "Term and Termination")
+  - summary: one sentence describing what this version covers and how
+  - drafted_clause: the full drafted clause text
 
 HARD RULES (violations will cause a retry):
+- Exactly 5 versions.
 - No invented case law. Do not cite any court cases.
 - No statute or regulation citations unless the user explicitly named them in the request.
 - No archaic legalese: never use "witnesseth", "party of the first part", "party of the second part", "in witness whereof", "now therefore", "know all men by these presents".
-- Defined terms must be consistently capitalized within each version (e.g. if you introduce "Confidential Information" capitalized, never write "confidential information" in lowercase in the same version).
-- Do NOT label versions with axis names or style descriptions.
+- Defined terms must be consistently capitalized within each version.
+- DO NOT use version-axis labels as the subject of titles or summaries.
 
-{{#is_single_clause}}
-For each version: provide a title (the clause name), a one-sentence summary, and the full drafted clause text in drafted_clause.
+Return ONLY valid JSON matching: {"versions": [ ...exactly 5 entries with title, summary, drafted_clause... ]}
+No prose, no markdown.
 {{/is_single_clause}}
-{{#is_list_of_clauses}}
-For each version: provide a title (a short name for this version's clause set), a one-sentence summary describing the set's character, and set drafted_clause to an empty string "".
-Within each version's summary, you may optionally list 3–5 representative clause titles for that set.
-{{/is_list_of_clauses}}
 
-Return ONLY valid JSON. No prose, no markdown.
+{{#is_list_of_clauses}}
+TASK: {{mode_instruction}}
+
+The user asked for an agreement type. Return ONE comprehensive list of ALL the clauses that a complete, production-ready version of this agreement type should contain.
+
+Do NOT return multiple versions of the list. Return a single list.
+
+Include every standard, business, and boilerplate clause an experienced attorney would expect for this specific agreement type. The list must contain AT LEAST 12 clauses; include more (15–25+) for agreement types that typically require them (SaaS agreements, M&A agreements, partnership agreements, extensive employment agreements, etc.).
+
+Each clause in the list must be a real, named clause for THIS specific agreement type — not a version label, not a stylistic descriptor. Every clause must be distinct; no duplicates or trivially-renamed duplicates.
+
+For each clause provide:
+  - title: the clause name as it would appear in the agreement (e.g. "Definitions", "Confidentiality Obligations", "Governing Law and Jurisdiction", "Service Levels", "Compensation", "Rent Payment")
+  - summary: a one-sentence description of what this clause covers
+
+For mutual or bilateral agreements, the list must be symmetric between the parties — no one-sided clauses.
+
+HARD RULES (violations will cause a retry):
+- Do not return multiple versions. Return a single list.
+- At least 12 clauses.
+- No archaic legalese in any summary.
+- Every clause title is the name of a real clause — not an axis label.
+
+Return ONLY valid JSON matching: {"clauses": [ {"title": "...", "summary": "..."}, ... ]}
+No prose, no markdown.
+{{/is_list_of_clauses}}
 
 <user_request>
 {{user_prompt}}

@@ -92,16 +92,17 @@ def test_e2e_single_clause_mode():
 
 
 def test_e2e_list_of_clauses_mode():
-    """POST with an agreement-type request returns mode=list_of_clauses with 5 versions."""
+    """POST with an agreement-type request returns mode=list_of_clauses with >=12 clauses."""
     session_id = f"e2e-list-{uuid.uuid4()}"
     data = _post("Draft an NDA", session_id)
 
     assert data["status"] == "ok", f"Expected ok, got: {data}"
     assert data["mode"] == "list_of_clauses"
-    assert len(data["versions"]) == 5
-    for v in data["versions"]:
-        assert v["title"].strip(), "title must not be empty"
-        assert v["summary"].strip(), "summary must not be empty"
+    assert len(data["clauses"]) >= 12
+    assert data.get("versions") in (None, [])
+    for c in data["clauses"]:
+        assert c["title"].strip(), "title must not be empty"
+        assert c["summary"].strip(), "summary must not be empty"
     assert data["disclaimer"] is not None
 
 
