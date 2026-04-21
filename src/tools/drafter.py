@@ -98,6 +98,41 @@ _INJECTION_PATTERNS = [
 _PLACEHOLDER_PATTERN = re.compile(r"\[([A-Z][A-Z0-9 /\-&]{1,60})\]")
 _MIN_LIST_CLAUSE_BODY_LEN = 50
 
+# Prescribed legal angles cycled through on each successive regenerate of the same
+# clause, so the LLM produces visibly different drafts instead of the same shape
+# with synonym swaps. These are instructions for the model; they must NOT be
+# echoed in titles or summaries (the axis-label validator already enforces that).
+_REGENERATE_ANGLES: List[str] = [
+    (
+        "Take a STRICTER, MORE PROTECTIVE approach than the previous draft: tighter "
+        "obligations, fewer carve-outs, shorter cure / notice periods, stronger "
+        "remedies (injunctive relief, indemnity for breach). Tilt protection toward "
+        "the party receiving the benefit of this clause."
+    ),
+    (
+        "Take a BALANCED, MUTUALLY SYMMETRIC approach: obligations run both ways, "
+        "commercially standard carve-outs on both sides, reasonable cure periods, "
+        "and remedies available to either party. Rewrite any one-sided language "
+        "from the previous draft as symmetric."
+    ),
+    (
+        "Take a PLAIN-ENGLISH, STREAMLINED approach: shorter sentences, modern drafting, "
+        "fewer defined terms, fewer commas, active voice. Cut redundancy from the previous "
+        "draft. Target roughly 40-60% of its length while preserving the core protections."
+    ),
+    (
+        "Take a COMPREHENSIVE, PROCEDURE-HEAVY approach: add explicit notice procedures, "
+        "numbered sub-obligations, an exhaustive carve-out list, escalation / dispute steps, "
+        "and survival language. Where the previous draft was high-level, spell the steps "
+        "out in detail."
+    ),
+]
+
+# Regenerate temperature — higher than fresh drafts so the LLM varies structure
+# and legal approach, not just word choice.
+_FRESH_DRAFT_TEMPERATURE = 0.15
+_REGENERATE_TEMPERATURE = 0.6
+
 
 def _sanitize_prompt(prompt: str) -> str:
     """Raise ValueError if prompt contains injection patterns; return stripped prompt."""
@@ -486,6 +521,7 @@ async def _generate_clause_draft(
     prior_draft: Optional[ClauseVersion] = None,
     doc_grounding: Optional[Dict[str, Any]] = None,
     relevant_chunks: Optional[List[Dict[str, Any]]] = None,
+    regenerate_angle: Optional[str] = None,
 ) -> DescribeDraftLLMResponse:
     """single_clause mode: generate exactly 1 draft of the requested clause.
 
@@ -509,6 +545,7 @@ async def _generate_clause_draft(
     governing_law = (doc_grounding or {}).get("governing_law") or ""
     chunks_text = _format_relevant_chunks(relevant_chunks or [])
 
+    angle_text = (regenerate_angle or "").strip() if is_regenerate else ""
     context = {
         "user_prompt": prompt,
         "mode": "single_clause",
@@ -522,6 +559,8 @@ async def _generate_clause_draft(
         "is_regenerate": is_regenerate,
         "prior_draft_title": prior_draft.title if prior_draft else "",
         "prior_draft_clause": prior_draft.drafted_clause if prior_draft else "",
+        "has_regenerate_angle": bool(angle_text),
+        "regenerate_angle": angle_text,
         "has_doc_grounding": has_grounding,
         "doc_parties_block": parties_block,
         "doc_governing_law": governing_law or "(not specified in document)",
@@ -541,7 +580,7 @@ async def _generate_clause_draft(
             "When no document is attached, use [ALL CAPS] square-bracket placeholders. "
             "Return ONLY valid JSON matching the schema."
         ),
-        temperature=0.35 if is_regenerate else 0.15,
+        temperature=_REGENERATE_TEMPERATURE if is_regenerate else _FRESH_DRAFT_TEMPERATURE,
     )
 
 
@@ -653,6 +692,35 @@ def _write_session_context(
         session.metadata["draft_last_list"] = [c.model_dump() for c in last_list]
 
 
+def _get_regen_count(session_id: str, title: str) -> int:
+    """Return how many times the clause with this title has already been regenerated in the session."""
+    container = get_service_container()
+    session = container.session_manager.get_or_create_session(session_id)
+    counts = session.metadata.get("draft_regenerate_counts") or {}
+    if not isinstance(counts, dict):
+        return 0
+    return int(counts.get(title.strip().lower(), 0))
+
+
+def _bump_regen_count(session_id: str, title: str) -> None:
+    """Increment the regenerate counter for this clause title."""
+    container = get_service_container()
+    session = container.session_manager.get_or_create_session(session_id)
+    counts = session.metadata.get("draft_regenerate_counts")
+    if not isinstance(counts, dict):
+        counts = {}
+    key = title.strip().lower()
+    counts[key] = int(counts.get(key, 0)) + 1
+    session.metadata["draft_regenerate_counts"] = counts
+
+
+def _pick_regenerate_angle(count: int) -> str:
+    """Pick the angle for the N-th regenerate of a clause (cycles through the list)."""
+    if not _REGENERATE_ANGLES:
+        return ""
+    return _REGENERATE_ANGLES[count % len(_REGENERATE_ANGLES)]
+
+
 def _find_clause_in_list(
     clauses: List[ClauseListEntry], title: str
 ) -> Tuple[Optional[int], Optional[ClauseListEntry]]:
@@ -691,6 +759,7 @@ async def _run_single_clause_generation(
     doc_grounding: Optional[Dict[str, Any]],
     relevant_chunks: List[Dict[str, Any]],
     is_regenerate: bool,
+    regenerate_angle: Optional[str] = None,
 ) -> Tuple[Optional[ClauseVersion], Optional[DescribeDraftResponse]]:
     """Single-clause generation + validation with one retry.
 
@@ -708,6 +777,7 @@ async def _run_single_clause_generation(
                 prior_draft=prior_draft_for_prompt,
                 doc_grounding=doc_grounding,
                 relevant_chunks=relevant_chunks,
+                regenerate_angle=regenerate_angle,
             )
             _validate_draft_response(
                 raw,
@@ -914,6 +984,11 @@ async def generate_describe_draft(
         effective_regenerate = regenerate and stored_last_version is not None
         prior_draft_for_prompt = stored_last_version if effective_regenerate else None
 
+        regenerate_angle: Optional[str] = None
+        if effective_regenerate and prior_draft_for_prompt is not None:
+            regen_count = _get_regen_count(session_id, prior_draft_for_prompt.title)
+            regenerate_angle = _pick_regenerate_angle(regen_count)
+
         relevant_chunks: List[Dict[str, Any]] = []
         if has_document:
             relevant_chunks = await _retrieve_relevant_chunks(session_id, clean_prompt)
@@ -960,11 +1035,14 @@ async def generate_describe_draft(
             doc_grounding=doc_grounding,
             relevant_chunks=relevant_chunks,
             is_regenerate=effective_regenerate,
+            regenerate_angle=regenerate_angle,
         )
         if error_resp is not None:
             return error_resp
         versions_out = [version]  # type: ignore[list-item]
         units_generated = 1
+        if effective_regenerate and prior_draft_for_prompt is not None:
+            _bump_regen_count(session_id, prior_draft_for_prompt.title)
 
     # --- Write session memory ---
     is_regenerate_hit = (
@@ -1083,6 +1161,9 @@ async def _regenerate_by_title(
         relevant_chunks = await _retrieve_relevant_chunks(session_id, retrieval_query)
     grounded_in_doc = bool(doc_grounding and doc_grounding.get("parties"))
 
+    regen_count = _get_regen_count(session_id, prior_draft.title)
+    regenerate_angle = _pick_regenerate_angle(regen_count)
+
     version, error_resp = await _run_single_clause_generation(
         session_id=session_id,
         clean_prompt=user_prompt_for_llm,
@@ -1092,10 +1173,12 @@ async def _regenerate_by_title(
         doc_grounding=doc_grounding,
         relevant_chunks=relevant_chunks,
         is_regenerate=True,
+        regenerate_angle=regenerate_angle,
     )
     if error_resp is not None:
         return error_resp
     assert version is not None
+    _bump_regen_count(session_id, prior_draft.title)
 
     # Update session: replace prior list entry in place (if applicable) and update last_version
     updated_list: Optional[List[ClauseListEntry]] = None

@@ -39,7 +39,22 @@ Placeholder style (use EXACTLY this format):
 {{/has_doc_grounding}}
 
 {{#is_regenerate}}
-REGENERATE MODE: The user previously received the draft below and clicked REGENERATE because they wanted a better or different take. Produce ONE new version that is MEANINGFULLY DIFFERENT and an IMPROVEMENT on the previous draft — not a rephrasing. Vary structure, wording, emphasis, carve-outs, remedies, and clause ordering. Tighten where the prior was loose; expand where it was thin.
+REGENERATE MODE: The user already received the draft below and clicked REGENERATE because the previous version was not what they wanted. Produce ONE new version that is MATERIALLY DIFFERENT — a different legal approach, not a synonym swap.
+
+You MUST vary at least THREE of the following from the previous draft:
+  (1) overall STRUCTURE — number and order of sub-clauses, whether obligations are listed as a single paragraph vs. a numbered/lettered list.
+  (2) set of CARVE-OUTS and exceptions.
+  (3) REMEDIES and enforcement language (specific performance, injunctive relief, liquidated damages, indemnity, etc.).
+  (4) NOTICE / cure / survival periods.
+  (5) LENGTH and level of detail (substantially shorter or substantially longer).
+  (6) which party the clause TILTS toward, if the clause is asymmetric.
+
+Drafts that keep the previous structure and merely rephrase sentences, add a defined term, or append one more sentence will be rejected.
+
+{{#has_regenerate_angle}}
+ANGLE FOR THIS REGENERATION (apply this as the guiding approach — do NOT mention the angle in the title or summary):
+{{regenerate_angle}}
+{{/has_regenerate_angle}}
 
 Previous draft (title: "{{prior_draft_title}}"):
 ---
