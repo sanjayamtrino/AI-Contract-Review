@@ -450,73 +450,82 @@ def _build_clause_location(chunk: Dict[str, Any]) -> Optional[ClauseLocation]:
     )
 
 
+_DUPLICATE_CHECK_TOP_N = 3
+
+
 async def _check_duplicate_clause(
     user_prompt: str, chunks: List[Dict[str, Any]]
 ) -> Optional[ExistingClauseMatch]:
-    """Decide whether the top retrieved chunk is already a clause on the user's topic.
+    """Decide whether any of the top-N retrieved chunks is already a clause on the user's topic.
 
-    Two-stage gate: (1) similarity score must exceed _DUPLICATE_SIMILARITY_GATE, and
-    (2) a cheap LLM confirmation call must agree. Only returns a match when both pass.
-
-    Each decision point emits an INFO log so operators can see exactly why a
-    candidate was or wasn't flagged as a duplicate.
+    A section in the uploaded document is often split across multiple chunks — the
+    exact clause the user is asking about might land at rank 2 or 3, not rank 1.
+    We iterate the top N chunks (above the similarity gate), run the LLM duplicate
+    check on each, and return on the first hit. Each decision point emits an INFO
+    log so operators can see exactly why a candidate was or wasn't flagged.
     """
     if not chunks:
         logger.info("duplicate_check skipped — no retrieval chunks")
         return None
-    top = chunks[0]
-    score = float(top.get("similarity_score") or 0.0)
-    if score < _DUPLICATE_SIMILARITY_GATE:
-        logger.info(
-            "duplicate_check skipped — top similarity %.3f below gate %.3f",
-            score, _DUPLICATE_SIMILARITY_GATE,
-        )
-        return None
-
-    candidate_text = (top.get("content") or "").strip()
-    if not candidate_text:
-        logger.info("duplicate_check skipped — top chunk content empty")
-        return None
 
     container = get_service_container()
-    rendered = load_prompt(
-        "describe_draft_duplicate_check_prompt",
-        context={"user_request": user_prompt, "candidate_text": candidate_text},
-    )
-    try:
-        result = await container.azure_openai_model.generate(
-            prompt=rendered,
-            context={},
-            response_model=DuplicateCheckResult,
-            system_message=(
-                "You decide whether a candidate passage already covers a specific "
-                "drafting request. Be strict. Return ONLY valid JSON."
-            ),
-            temperature=0.0,
+
+    for rank, chunk in enumerate(chunks[:_DUPLICATE_CHECK_TOP_N]):
+        score = float(chunk.get("similarity_score") or 0.0)
+        if score < _DUPLICATE_SIMILARITY_GATE:
+            logger.info(
+                "duplicate_check rank=%d skipped — similarity %.3f below gate %.3f",
+                rank, score, _DUPLICATE_SIMILARITY_GATE,
+            )
+            # Remaining chunks are lower-ranked, so they'll all be below the gate too.
+            break
+
+        candidate_text = (chunk.get("content") or "").strip()
+        if not candidate_text:
+            logger.info("duplicate_check rank=%d skipped — content empty", rank)
+            continue
+
+        rendered = load_prompt(
+            "describe_draft_duplicate_check_prompt",
+            context={"user_request": user_prompt, "candidate_text": candidate_text},
         )
-    except Exception as e:
-        logger.warning("duplicate-check LLM call failed error=%s", str(e))
-        return None
+        try:
+            result = await container.azure_openai_model.generate(
+                prompt=rendered,
+                context={},
+                response_model=DuplicateCheckResult,
+                system_message=(
+                    "You decide whether a candidate passage — which may be a full "
+                    "clause or only an excerpt — is on the same topic as the user's "
+                    "drafting request. Return ONLY valid JSON."
+                ),
+                temperature=0.0,
+            )
+        except Exception as e:
+            logger.warning("duplicate-check LLM call failed rank=%d error=%s", rank, str(e))
+            continue
 
-    logger.info(
-        "duplicate_check result — similarity=%.3f is_duplicate=%s matched_title=%s",
-        score, result.is_duplicate, result.matched_title or "(none)",
-    )
+        logger.info(
+            "duplicate_check rank=%d similarity=%.3f is_duplicate=%s matched_title=%s",
+            rank, score, result.is_duplicate, result.matched_title or "(none)",
+        )
 
-    if not result.is_duplicate:
-        return None
+        if not result.is_duplicate:
+            continue
 
-    inferred_title = result.matched_title
-    if not inferred_title:
-        metadata = top.get("metadata") or {}
-        inferred_title = metadata.get("section_heading") if isinstance(metadata, dict) else None
+        inferred_title = result.matched_title
+        if not inferred_title:
+            metadata = chunk.get("metadata") or {}
+            inferred_title = metadata.get("section_heading") if isinstance(metadata, dict) else None
 
-    return ExistingClauseMatch(
-        title=inferred_title,
-        excerpt=candidate_text,
-        similarity_score=score,
-        location=_build_clause_location(top),
-    )
+        return ExistingClauseMatch(
+            title=inferred_title,
+            excerpt=candidate_text,
+            similarity_score=score,
+            location=_build_clause_location(chunk),
+        )
+
+    return None
 
 
 def _format_parties_block(parties: List[Dict[str, Optional[str]]]) -> str:
