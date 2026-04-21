@@ -261,6 +261,32 @@ def test_validate_clause_list_fails_without_placeholders_in_no_doc_mode():
         _validate_clause_list(response, require_placeholders=True)
 
 
+def test_validate_clause_list_passes_when_majority_of_clauses_have_placeholders():
+    """A few boilerplate clauses without placeholders (Confidentiality, Severability) are allowed."""
+    response = _make_list_response(n=15, with_placeholders=True)
+    # Strip placeholders from 3 clauses — leaves 12/15 = 80% covered, above the 60% threshold.
+    for i in (4, 9, 12):
+        response.clauses[i].drafted_clause = (
+            "Each party agrees to keep confidential all non-public information received "
+            "from the other and not to disclose it. This obligation survives termination. "
+        ) * 2
+    _validate_clause_list(response, require_placeholders=True)  # must not raise
+
+
+def test_validate_clause_list_fails_when_too_few_clauses_have_placeholders():
+    """If the LLM ignored the template instruction on most clauses, still fail."""
+    response = _make_list_response(n=13, with_placeholders=True)
+    # Strip placeholders from 10 of 13 clauses → 3/13 = 23% coverage, well below threshold.
+    boilerplate = (
+        "Each party agrees to keep confidential all non-public information received "
+        "from the other and not to disclose it. This obligation survives termination. "
+    ) * 2
+    for i in range(10):
+        response.clauses[i].drafted_clause = boilerplate
+    with pytest.raises(ValueError, match="reusable template"):
+        _validate_clause_list(response, require_placeholders=True)
+
+
 def test_validate_clause_list_fails_with_placeholders_in_doc_grounded_mode():
     response = _make_list_response(n=13, with_placeholders=True)
     with pytest.raises(ValueError, match="must not contain"):

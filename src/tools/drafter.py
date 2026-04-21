@@ -243,8 +243,12 @@ def _validate_clause_list(
 ) -> None:
     """Validate list_of_clauses mode output: one complete clause list (≥12 clauses).
 
-    Every entry must have a non-empty drafted body; no banned phrases; placeholder
-    rules applied based on whether the session has doc grounding.
+    Every entry must have a non-empty drafted body; no banned phrases.
+    Placeholder rule for no-doc mode is aggregate: at least 60% of clauses
+    (floor of 4) must include at least one [PLACEHOLDER] token. A few
+    boilerplate-only clauses (Confidentiality, Severability, Entire Agreement,
+    etc.) can legitimately lack placeholders and should not fail the whole list.
+    For doc-grounded lists, NO clause may contain placeholder tokens.
     """
     if len(response.clauses) < 12:
         raise ValueError(
@@ -252,6 +256,7 @@ def _validate_clause_list(
             f"got {len(response.clauses)}"
         )
     seen_titles: set = set()
+    clauses_with_placeholders = 0
     for i, clause in enumerate(response.clauses):
         idx = i + 1
         if not clause.title or not clause.title.strip():
@@ -288,18 +293,26 @@ def _validate_clause_list(
                 )
 
         found_placeholders = _extract_placeholders(clause.drafted_clause)
-        if require_placeholders and not found_placeholders:
-            raise ValueError(
-                f"Clause {idx} ('{clause.title}'): drafted_clause must contain "
-                f"at least one [PLACEHOLDER] token when no document is attached"
-            )
         if forbid_placeholders and found_placeholders:
             raise ValueError(
                 f"Clause {idx} ('{clause.title}'): drafted_clause must not contain "
                 f"[PLACEHOLDER] tokens when a document is attached "
                 f"(found {found_placeholders[:3]})"
             )
+        if found_placeholders:
+            clauses_with_placeholders += 1
         clause.placeholders = found_placeholders
+
+    if require_placeholders:
+        total = len(response.clauses)
+        min_required = max(4, int(total * 0.6))
+        if clauses_with_placeholders < min_required:
+            raise ValueError(
+                f"Only {clauses_with_placeholders}/{total} clauses contain "
+                f"[PLACEHOLDER] tokens; at least {min_required} required when no "
+                f"document is attached. The LLM appears to have drafted a specific "
+                f"contract instead of a reusable template."
+            )
 
 
 async def _classify_intent(prompt: str) -> IntentClassification:

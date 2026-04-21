@@ -144,9 +144,9 @@ HARD RULES (violations will cause a retry):
 - Leave the `placeholders` field as an empty list for every clause.
 {{/has_doc_grounding}}
 {{^has_doc_grounding}}
-- Every drafted_clause MUST contain at least one `[PLACEHOLDER]` token.
+- STRONG PREFERENCE: every drafted_clause should contain at least one `[PLACEHOLDER]` token. Even boilerplate clauses (Confidentiality, Entire Agreement, Severability, Notices) should reference `[PARTY A]` / `[PARTY B]` explicitly instead of using generic phrases like "each party". A small number of pure-boilerplate clauses may omit placeholders, but the majority of the list MUST use them.
 - Every placeholder used in a drafted body MUST appear once in that entry's `placeholders` array, in the exact `[ALL CAPS]` bracketed form.
-- Placeholder tokens MUST be reused consistently across the whole list.
+- Placeholder tokens MUST be reused consistently across the whole list — the same concept always uses the same token (e.g. every reference to the first party is `[PARTY A]`).
 {{/has_doc_grounding}}
 
 Return ONLY valid JSON matching: {"clauses": [ {"title": "...", "summary": "...", "drafted_clause": "...", "placeholders": ["...", "..."]}, ... ]}
