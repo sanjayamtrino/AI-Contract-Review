@@ -30,7 +30,9 @@ async def generate_draft(
     agreement context across calls.
 
     When `regenerate=true`, the agent improves on the previous single-clause draft
-    stored for this session instead of producing a fresh draft.
+    stored for this session instead of producing a fresh draft. When
+    `target_clause_title` is also supplied, the agent regenerates that specific
+    clause (by title) from the last list_of_clauses or single_clause response.
 
     Domain errors (validation_failed, llm_failed, etc.) are returned as HTTP 200 with
     status="error" in the response body. HTTP 4xx/5xx are reserved for missing headers
@@ -40,4 +42,5 @@ async def generate_draft(
         prompt=request.prompt,
         session_id=session_id,
         regenerate=request.regenerate,
+        target_clause_title=request.target_clause_title,
     )

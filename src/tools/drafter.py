@@ -1,21 +1,30 @@
 """
 Describe & Draft tool — classify intent, generate a draft, validate, write session memory.
 
-single_clause mode returns one draft per call; the caller regenerates by invoking
-the endpoint again with regenerate=true, which asks the LLM to improve on the
-previous draft stored in session metadata.
+Two modes, gated by whether a document is attached to the session:
+  - With document: drafts are grounded in extracted parties + governing law and
+    checked against the document for duplicate clauses.
+  - Without document: drafts are emitted as reusable templates with [PLACEHOLDER]
+    tokens (ALL CAPS in square brackets) that the frontend can substitute later.
+
+single_clause mode returns one draft per call; regenerate is supported either
+implicitly (regenerate=true on a session with a prior draft) or explicitly via
+target_clause_title, which looks up a clause from a prior list_of_clauses
+response and regenerates just that one.
 
 All business logic for the Describe & Draft Agent lives here. The agent module
 (src/agents/describe_draft.py) is a thin dispatcher that delegates to this module.
 """
 import logging
+import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.dependencies import get_service_container
 from src.schemas.describe_draft import (
     ClauseListEntry,
     ClauseListLLMResponse,
+    ClauseLocation,
     ClauseVersion,
     DescribeDraftErrorType,
     DescribeDraftLLMResponse,
@@ -85,6 +94,10 @@ _INJECTION_PATTERNS = [
     "system: ",
 ]
 
+# Placeholder token format: [ALL CAPS + SPACES + DIGITS], e.g. [PARTY A], [EFFECTIVE DATE]
+_PLACEHOLDER_PATTERN = re.compile(r"\[([A-Z][A-Z0-9 /\-&]{1,60})\]")
+_MIN_LIST_CLAUSE_BODY_LEN = 50
+
 
 def _sanitize_prompt(prompt: str) -> str:
     """Raise ValueError if prompt contains injection patterns; return stripped prompt."""
@@ -96,13 +109,33 @@ def _sanitize_prompt(prompt: str) -> str:
     return p
 
 
-def _validate_draft_response(response: DescribeDraftLLMResponse) -> None:
+def _extract_placeholders(text: str) -> List[str]:
+    """Return distinct `[ALL CAPS]` placeholder tokens found in text, in first-seen order."""
+    seen: List[str] = []
+    for match in _PLACEHOLDER_PATTERN.finditer(text or ""):
+        token = f"[{match.group(1)}]"
+        if token not in seen:
+            seen.append(token)
+    return seen
+
+
+def _validate_draft_response(
+    response: DescribeDraftLLMResponse,
+    *,
+    require_placeholders: bool = False,
+    forbid_placeholders: bool = False,
+) -> None:
     """Validate single_clause mode output: exactly 1 version containing a full clause.
 
     Checks:
       - exactly 1 version
       - non-empty title and summary
       - drafted_clause is at least 50 chars and contains no banned phrases or axis labels
+      - if require_placeholders: drafted_clause contains at least one [ALL CAPS] token
+      - if forbid_placeholders: drafted_clause contains NO [ALL CAPS] tokens
+
+    After validation, `version.placeholders` is rewritten to the authoritative
+    list of tokens found in `drafted_clause` — the LLM's own list is advisory.
     """
     if len(response.versions) != 1:
         raise ValueError(f"Expected 1 version, got {len(response.versions)}")
@@ -140,6 +173,19 @@ def _validate_draft_response(response: DescribeDraftLLMResponse) -> None:
                 f"Version: banned phrase '{phrase}' found in drafted_clause"
             )
 
+    found_placeholders = _extract_placeholders(version.drafted_clause)
+    if require_placeholders and not found_placeholders:
+        raise ValueError(
+            "Version: drafted_clause must contain at least one [PLACEHOLDER] "
+            "token when no document is attached"
+        )
+    if forbid_placeholders and found_placeholders:
+        raise ValueError(
+            f"Version: drafted_clause must not contain [PLACEHOLDER] tokens "
+            f"when a document is attached (found {found_placeholders[:3]})"
+        )
+    version.placeholders = found_placeholders
+
 
 def _validate_regenerated_draft_differs(
     new_version: ClauseVersion, prior_version: ClauseVersion
@@ -154,8 +200,17 @@ def _validate_regenerated_draft_differs(
         )
 
 
-def _validate_clause_list(response: ClauseListLLMResponse) -> None:
-    """Validate list_of_clauses mode output: one complete clause list (≥12 clauses)."""
+def _validate_clause_list(
+    response: ClauseListLLMResponse,
+    *,
+    require_placeholders: bool = False,
+    forbid_placeholders: bool = False,
+) -> None:
+    """Validate list_of_clauses mode output: one complete clause list (≥12 clauses).
+
+    Every entry must have a non-empty drafted body; no banned phrases; placeholder
+    rules applied based on whether the session has doc grounding.
+    """
     if len(response.clauses) < 12:
         raise ValueError(
             f"Expected at least 12 clauses for a complete agreement, "
@@ -181,6 +236,35 @@ def _validate_clause_list(response: ClauseListLLMResponse) -> None:
                 raise ValueError(
                     f"Clause {idx}: banned phrase '{phrase}' found in summary"
                 )
+
+        # Drafted body checks
+        if not clause.drafted_clause or not clause.drafted_clause.strip():
+            raise ValueError(f"Clause {idx}: drafted_clause is empty")
+        if len(clause.drafted_clause.strip()) < _MIN_LIST_CLAUSE_BODY_LEN:
+            raise ValueError(
+                f"Clause {idx}: drafted_clause suspiciously short "
+                f"({len(clause.drafted_clause.strip())} chars)"
+            )
+        body_lower = clause.drafted_clause.lower()
+        for phrase in _BANNED_PHRASES:
+            if phrase in body_lower:
+                raise ValueError(
+                    f"Clause {idx}: banned phrase '{phrase}' found in drafted_clause"
+                )
+
+        found_placeholders = _extract_placeholders(clause.drafted_clause)
+        if require_placeholders and not found_placeholders:
+            raise ValueError(
+                f"Clause {idx} ('{clause.title}'): drafted_clause must contain "
+                f"at least one [PLACEHOLDER] token when no document is attached"
+            )
+        if forbid_placeholders and found_placeholders:
+            raise ValueError(
+                f"Clause {idx} ('{clause.title}'): drafted_clause must not contain "
+                f"[PLACEHOLDER] tokens when a document is attached "
+                f"(found {found_placeholders[:3]})"
+            )
+        clause.placeholders = found_placeholders
 
 
 async def _classify_intent(prompt: str) -> IntentClassification:
@@ -281,6 +365,41 @@ async def _retrieve_relevant_chunks(
     return chunks
 
 
+def _build_clause_location(chunk: Dict[str, Any]) -> Optional[ClauseLocation]:
+    """Pull location info (chunk index, section heading, page) from a retrieval chunk."""
+    metadata = chunk.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    chunk_index = chunk.get("index")
+    if chunk_index is None:
+        chunk_index = metadata.get("chunk_index")
+    try:
+        chunk_index_int = int(chunk_index) if chunk_index is not None else None
+    except (TypeError, ValueError):
+        chunk_index_int = None
+
+    section_heading = metadata.get("section_heading")
+    if isinstance(section_heading, str):
+        section_heading = section_heading.strip() or None
+    else:
+        section_heading = None
+
+    page_raw = metadata.get("page_number") or metadata.get("page")
+    try:
+        page_number = int(page_raw) if page_raw is not None else None
+    except (TypeError, ValueError):
+        page_number = None
+
+    if chunk_index_int is None and section_heading is None and page_number is None:
+        return None
+    return ClauseLocation(
+        chunk_index=chunk_index_int,
+        section_heading=section_heading,
+        page_number=page_number,
+    )
+
+
 async def _check_duplicate_clause(
     user_prompt: str, chunks: List[Dict[str, Any]]
 ) -> Optional[ExistingClauseMatch]:
@@ -332,6 +451,7 @@ async def _check_duplicate_clause(
         title=inferred_title,
         excerpt=candidate_text,
         similarity_score=score,
+        location=_build_clause_location(top),
     )
 
 
@@ -375,7 +495,8 @@ async def _generate_clause_draft(
 
     If `doc_grounding` is given, injects party names + governing law and
     (optionally) relevant chunks from the uploaded document so the draft is
-    drop-in ready for that contract.
+    drop-in ready for that contract. Otherwise the prompt instructs the LLM
+    to use `[PLACEHOLDER]` tokens.
     """
     container = get_service_container()
     llm = container.azure_openai_model
@@ -417,6 +538,7 @@ async def _generate_clause_draft(
             "Never invent case law. Never cite statutes unless the user named them. "
             "No archaic legalese. Consistent defined-term capitalization. "
             "When party names are provided, use them exactly — no placeholders. "
+            "When no document is attached, use [ALL CAPS] square-bracket placeholders. "
             "Return ONLY valid JSON matching the schema."
         ),
         temperature=0.35 if is_regenerate else 0.15,
@@ -427,14 +549,20 @@ async def _generate_clause_list(
     prompt: str,
     agreement_type: Optional[str],
     prior_clauses: List[str],
+    doc_grounding: Optional[Dict[str, Any]] = None,
 ) -> ClauseListLLMResponse:
-    """list_of_clauses mode: return ONE comprehensive clause list for the agreement type."""
+    """list_of_clauses mode: return ONE comprehensive clause list with drafted bodies."""
     container = get_service_container()
     llm = container.azure_openai_model
     mode_instruction = (
         f"List all clauses that should appear in a "
-        f"{agreement_type or 'legal agreement'} as requested by the user."
+        f"{agreement_type or 'legal agreement'} as requested by the user, "
+        f"and draft the body of each one."
     )
+    has_grounding = bool(doc_grounding and doc_grounding.get("parties"))
+    parties_block = _format_parties_block(doc_grounding["parties"]) if has_grounding else ""
+    governing_law = (doc_grounding or {}).get("governing_law") or ""
+
     context = {
         "user_prompt": prompt,
         "mode": "list_of_clauses",
@@ -445,6 +573,9 @@ async def _generate_clause_list(
         "has_agreement_type": bool(agreement_type),
         "prior_clauses": "\n".join(prior_clauses) if prior_clauses else "",
         "has_prior_clauses": bool(prior_clauses),
+        "has_doc_grounding": has_grounding,
+        "doc_parties_block": parties_block,
+        "doc_governing_law": governing_law or "(not specified in document)",
     }
     rendered = load_prompt("describe_draft_generation_prompt", context=context)
     return await llm.generate(
@@ -453,16 +584,19 @@ async def _generate_clause_list(
         response_model=ClauseListLLMResponse,
         system_message=(
             "You are an expert legal drafter. Return ONE complete clause list for the "
-            "requested agreement type. Do NOT return multiple versions. "
-            "Return ONLY valid JSON matching the schema."
+            "requested agreement type, with a drafted body for every clause. "
+            "When a document is attached, use the exact party names and governing law provided. "
+            "When no document is attached, use [ALL CAPS] square-bracket placeholders "
+            "consistently across every clause. Return ONLY valid JSON matching the schema."
         ),
-        temperature=0.1,
+        temperature=0.15,
     )
 
 
 def _read_session_context(session_id: str) -> dict:
     container = get_service_container()
     session = container.session_manager.get_or_create_session(session_id)
+
     last_raw = session.metadata.get("draft_last_version")
     last_version: Optional[ClauseVersion] = None
     if isinstance(last_raw, dict):
@@ -470,10 +604,23 @@ def _read_session_context(session_id: str) -> dict:
             last_version = ClauseVersion.model_validate(last_raw)
         except Exception:
             last_version = None
+
+    last_list_raw = session.metadata.get("draft_last_list")
+    last_list: List[ClauseListEntry] = []
+    if isinstance(last_list_raw, list):
+        for entry in last_list_raw:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                last_list.append(ClauseListEntry.model_validate(entry))
+            except Exception:
+                continue
+
     return {
         "agreement_type": session.metadata.get("draft_agreement_type"),
         "prior_clauses": session.metadata.get("draft_prior_clauses", []) or [],
         "last_version": last_version,
+        "last_list": last_list,
     }
 
 
@@ -484,6 +631,8 @@ def _write_session_context(
     clear_prior: bool = False,
     last_version: Optional[ClauseVersion] = None,
     clear_last_version: bool = False,
+    last_list: Optional[List[ClauseListEntry]] = None,
+    clear_last_list: bool = False,
 ) -> None:
     container = get_service_container()
     session = container.session_manager.get_or_create_session(session_id)
@@ -498,68 +647,185 @@ def _write_session_context(
         session.metadata.pop("draft_last_version", None)
     elif last_version is not None:
         session.metadata["draft_last_version"] = last_version.model_dump()
+    if clear_last_list:
+        session.metadata.pop("draft_last_list", None)
+    elif last_list is not None:
+        session.metadata["draft_last_list"] = [c.model_dump() for c in last_list]
+
+
+def _find_clause_in_list(
+    clauses: List[ClauseListEntry], title: str
+) -> Tuple[Optional[int], Optional[ClauseListEntry]]:
+    """Case-insensitive title lookup in a prior list_of_clauses response."""
+    target = title.strip().lower()
+    if not target:
+        return None, None
+    for i, entry in enumerate(clauses):
+        if entry.title.strip().lower() == target:
+            return i, entry
+    return None, None
+
+
+def _error_response(
+    session_id: str,
+    mode: str,
+    error_type: DescribeDraftErrorType,
+    message: str,
+) -> DescribeDraftResponse:
+    return DescribeDraftResponse(
+        session_id=session_id,
+        mode=mode,  # type: ignore[arg-type]
+        status="error",
+        disclaimer=None,
+        error_type=error_type,
+        error_message=message,
+    )
+
+
+async def _run_single_clause_generation(
+    session_id: str,
+    clean_prompt: str,
+    effective_agreement_type: Optional[str],
+    prior_clauses: List[str],
+    prior_draft_for_prompt: Optional[ClauseVersion],
+    doc_grounding: Optional[Dict[str, Any]],
+    relevant_chunks: List[Dict[str, Any]],
+    is_regenerate: bool,
+) -> Tuple[Optional[ClauseVersion], Optional[DescribeDraftResponse]]:
+    """Single-clause generation + validation with one retry.
+
+    Returns (clause_version, None) on success, or (None, error_response) on failure.
+    """
+    has_grounding = bool(doc_grounding and doc_grounding.get("parties"))
+    validation_error: Optional[str] = None
+
+    for attempt in range(2):
+        try:
+            raw = await _generate_clause_draft(
+                prompt=clean_prompt,
+                agreement_type=effective_agreement_type,
+                prior_clauses=prior_clauses,
+                prior_draft=prior_draft_for_prompt,
+                doc_grounding=doc_grounding,
+                relevant_chunks=relevant_chunks,
+            )
+            _validate_draft_response(
+                raw,
+                require_placeholders=not has_grounding,
+                forbid_placeholders=has_grounding,
+            )
+            if is_regenerate and prior_draft_for_prompt is not None:
+                _validate_regenerated_draft_differs(
+                    raw.versions[0], prior_draft_for_prompt
+                )
+            return raw.versions[0], None
+        except ValueError as ve:
+            validation_error = str(ve)
+            logger.warning(
+                "describe_draft validation failed session=%s attempt=%d regenerate=%s error=%s",
+                session_id, attempt + 1, is_regenerate, validation_error,
+            )
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(
+                "describe_draft generation error session=%s attempt=%d regenerate=%s error=%s",
+                session_id, attempt + 1, is_regenerate, error_msg,
+            )
+            error_type = (
+                DescribeDraftErrorType.RATE_LIMITED
+                if "rate" in error_msg.lower()
+                else DescribeDraftErrorType.LLM_FAILED
+            )
+            return None, _error_response(
+                session_id,
+                "single_clause",
+                error_type,
+                f"LLM generation failed: {error_msg}",
+            )
+
+    return None, _error_response(
+        session_id,
+        "single_clause",
+        DescribeDraftErrorType.VALIDATION_FAILED,
+        f"Generation validation failed after 2 attempts: {validation_error}",
+    )
 
 
 async def generate_describe_draft(
-    prompt: str,
+    prompt: Optional[str],
     session_id: str,
     regenerate: bool = False,
+    target_clause_title: Optional[str] = None,
 ) -> DescribeDraftResponse:
     """
     Main entry point for the describe-draft agent.
 
     Flow:
-      1. Sanitize input.
-      2. Read session memory (including last single-clause draft if any).
-      3. Classify intent (temp 0.0).
-      4. On clarification: return immediately with no generation.
-      5. On list_of_clauses: generate one clause list, validate, retry once.
-         On single_clause: generate ONE draft (regenerate=True asks for an improved
-         variation of the prior draft), validate, retry once.
-      6. Write session memory — stash the latest single-clause draft for later regenerate.
-      7. Emit audit log.
+      1. If target_clause_title is set → short-circuit into regenerate-by-title path:
+         look up the prior clause body (from draft_last_list or draft_last_version),
+         route into single-clause generation with that as prior_draft. Skip classifier.
+      2. Otherwise: sanitize input, classify intent.
+      3. On clarification: return immediately with no generation.
+      4. On list_of_clauses: generate clause list (with drafted bodies), validate, retry once.
+         On single_clause: duplicate-check (if doc attached), then generate ONE draft
+         (regenerate=True asks for an improved variation), validate, retry once.
+      5. Write session memory.
+      6. Emit audit log.
     """
     start_time = time.time()
 
-    # 1. Sanitize input
-    try:
-        clean_prompt = _sanitize_prompt(prompt)
-    except ValueError as e:
-        return DescribeDraftResponse(
+    # --- 1. Regenerate-by-title short-circuit ---
+    if target_clause_title and target_clause_title.strip():
+        return await _regenerate_by_title(
             session_id=session_id,
-            mode="clarification",
-            status="error",
-            disclaimer=None,
-            error_type=DescribeDraftErrorType.VALIDATION_FAILED,
-            error_message=str(e),
+            target_clause_title=target_clause_title.strip(),
+            refinement_prompt=prompt,
+            start_time=start_time,
         )
 
-    # 2. Read session memory
+    # --- 2. Sanitize input ---
+    raw_prompt = prompt or ""
+    if not raw_prompt.strip():
+        return _error_response(
+            session_id,
+            "clarification",
+            DescribeDraftErrorType.VALIDATION_FAILED,
+            "Prompt must not be empty when target_clause_title is not provided.",
+        )
+    try:
+        clean_prompt = _sanitize_prompt(raw_prompt)
+    except ValueError as e:
+        return _error_response(
+            session_id,
+            "clarification",
+            DescribeDraftErrorType.VALIDATION_FAILED,
+            str(e),
+        )
+
+    # Read session memory
     ctx = _read_session_context(session_id)
     stored_agreement_type: Optional[str] = ctx["agreement_type"]
     prior_clauses: List[str] = ctx["prior_clauses"]
     stored_last_version: Optional[ClauseVersion] = ctx["last_version"]
 
-    # 3. Classify intent
+    # Classify intent
     try:
         classification = await _classify_intent(clean_prompt)
     except Exception as e:
         logger.error(
             "describe_draft classify error session=%s error=%s", session_id, str(e)
         )
-        return DescribeDraftResponse(
-            session_id=session_id,
-            mode="clarification",
-            status="error",
-            disclaimer=None,
-            error_type=DescribeDraftErrorType.LLM_FAILED,
-            error_message=f"Intent classification failed: {str(e)}",
+        return _error_response(
+            session_id,
+            "clarification",
+            DescribeDraftErrorType.LLM_FAILED,
+            f"Intent classification failed: {str(e)}",
         )
 
     mode = classification.mode
     detected_agreement_type = classification.detected_agreement_type
 
-    # 4. Clarification path — no generation
+    # Clarification path — no generation
     if mode == "clarification":
         return DescribeDraftResponse(
             session_id=session_id,
@@ -570,7 +836,6 @@ async def generate_describe_draft(
             error_type=None,
         )
 
-    # Determine effective agreement type and whether to clear prior clauses
     effective_agreement_type = detected_agreement_type or stored_agreement_type
     clear_prior = (
         detected_agreement_type is not None
@@ -578,12 +843,19 @@ async def generate_describe_draft(
         and detected_agreement_type.lower() != stored_agreement_type.lower()
     )
 
-    # 5. Generate — branch on mode
-    validation_error: Optional[str] = None
+    # Detect whether a document is attached (both modes benefit from grounding)
+    container = get_service_container()
+    session_obj = container.session_manager.get_or_create_session(session_id)
+    has_document = _session_has_document(session_obj)
+    doc_grounding: Optional[Dict[str, Any]] = None
+    if has_document:
+        doc_grounding = await _get_doc_grounding(session_id)
+    grounded_in_doc = bool(doc_grounding and doc_grounding.get("parties"))
+
     clauses_out: List[ClauseListEntry] = []
     versions_out: List[ClauseVersion] = []
     units_generated = 0
-    grounded_in_doc = False
+    validation_error: Optional[str] = None
 
     if mode == "list_of_clauses":
         list_response: Optional[ClauseListLLMResponse] = None
@@ -593,8 +865,13 @@ async def generate_describe_draft(
                     prompt=clean_prompt,
                     agreement_type=effective_agreement_type,
                     prior_clauses=prior_clauses if not clear_prior else [],
+                    doc_grounding=doc_grounding,
                 )
-                _validate_clause_list(raw_list)
+                _validate_clause_list(
+                    raw_list,
+                    require_placeholders=not grounded_in_doc,
+                    forbid_placeholders=grounded_in_doc,
+                )
                 list_response = raw_list
                 break
             except ValueError as ve:
@@ -614,25 +891,19 @@ async def generate_describe_draft(
                     if "rate" in error_msg.lower()
                     else DescribeDraftErrorType.LLM_FAILED
                 )
-                return DescribeDraftResponse(
-                    session_id=session_id,
-                    mode=mode,
-                    status="error",
-                    disclaimer=None,
-                    error_type=error_type,
-                    error_message=f"LLM generation failed: {error_msg}",
+                return _error_response(
+                    session_id,
+                    mode,
+                    error_type,
+                    f"LLM generation failed: {error_msg}",
                 )
 
         if list_response is None:
-            return DescribeDraftResponse(
-                session_id=session_id,
-                mode=mode,
-                status="error",
-                disclaimer=None,
-                error_type=DescribeDraftErrorType.VALIDATION_FAILED,
-                error_message=(
-                    f"Clause-list validation failed after 2 attempts: {validation_error}"
-                ),
+            return _error_response(
+                session_id,
+                mode,
+                DescribeDraftErrorType.VALIDATION_FAILED,
+                f"Clause-list validation failed after 2 attempts: {validation_error}",
             )
 
         clauses_out = list_response.clauses
@@ -643,18 +914,9 @@ async def generate_describe_draft(
         effective_regenerate = regenerate and stored_last_version is not None
         prior_draft_for_prompt = stored_last_version if effective_regenerate else None
 
-        # Doc-grounded path: only when a document is attached to the session.
-        container = get_service_container()
-        session_obj = container.session_manager.get_or_create_session(session_id)
-        has_document = _session_has_document(session_obj)
-        doc_grounding: Optional[Dict[str, Any]] = None
         relevant_chunks: List[Dict[str, Any]] = []
-
         if has_document:
-            doc_grounding = await _get_doc_grounding(session_id)
             relevant_chunks = await _retrieve_relevant_chunks(session_id, clean_prompt)
-            grounded_in_doc = bool(doc_grounding and doc_grounding.get("parties"))
-
             # Duplicate detection — skip when regenerate is active (user already
             # saw the prior draft; they want a new one regardless).
             if not effective_regenerate and relevant_chunks:
@@ -689,87 +951,44 @@ async def generate_describe_draft(
                         grounded_in_document=True,
                     )
 
-        versions_response: Optional[DescribeDraftLLMResponse] = None
-        for attempt in range(2):
-            try:
-                raw = await _generate_clause_draft(
-                    prompt=clean_prompt,
-                    agreement_type=effective_agreement_type,
-                    prior_clauses=prior_clauses if not clear_prior else [],
-                    prior_draft=prior_draft_for_prompt,
-                    doc_grounding=doc_grounding,
-                    relevant_chunks=relevant_chunks,
-                )
-                _validate_draft_response(raw)
-                if effective_regenerate:
-                    _validate_regenerated_draft_differs(
-                        raw.versions[0], stored_last_version  # type: ignore[arg-type]
-                    )
-                versions_response = raw
-                break
-            except ValueError as ve:
-                validation_error = str(ve)
-                logger.warning(
-                    "describe_draft validation failed session=%s attempt=%d regenerate=%s error=%s",
-                    session_id, attempt + 1, effective_regenerate, validation_error,
-                )
-            except Exception as e:
-                error_msg = str(e)
-                logger.error(
-                    "describe_draft generation error session=%s attempt=%d regenerate=%s error=%s",
-                    session_id, attempt + 1, effective_regenerate, error_msg,
-                )
-                error_type = (
-                    DescribeDraftErrorType.RATE_LIMITED
-                    if "rate" in error_msg.lower()
-                    else DescribeDraftErrorType.LLM_FAILED
-                )
-                return DescribeDraftResponse(
-                    session_id=session_id,
-                    mode=mode,
-                    status="error",
-                    disclaimer=None,
-                    error_type=error_type,
-                    error_message=f"LLM generation failed: {error_msg}",
-                )
+        version, error_resp = await _run_single_clause_generation(
+            session_id=session_id,
+            clean_prompt=clean_prompt,
+            effective_agreement_type=effective_agreement_type,
+            prior_clauses=prior_clauses if not clear_prior else [],
+            prior_draft_for_prompt=prior_draft_for_prompt,
+            doc_grounding=doc_grounding,
+            relevant_chunks=relevant_chunks,
+            is_regenerate=effective_regenerate,
+        )
+        if error_resp is not None:
+            return error_resp
+        versions_out = [version]  # type: ignore[list-item]
+        units_generated = 1
 
-        if versions_response is None:
-            return DescribeDraftResponse(
-                session_id=session_id,
-                mode=mode,
-                status="error",
-                disclaimer=None,
-                error_type=DescribeDraftErrorType.VALIDATION_FAILED,
-                error_message=(
-                    f"Generation validation failed after 2 attempts: {validation_error}"
-                ),
-            )
-
-        versions_out = versions_response.versions
-        units_generated = len(versions_out)
-
-    # 6. Write session memory
+    # --- Write session memory ---
     is_regenerate_hit = (
         mode == "single_clause"
         and regenerate
         and stored_last_version is not None
     )
     if mode == "single_clause" and versions_out and not is_regenerate_hit:
-        # Fresh draft: track the clause title in prior_clauses for future context.
         new_titles = [versions_out[0].title]
     else:
-        # Regenerate (same clause) or list_of_clauses: don't append to prior_clauses.
         new_titles = []
+    # Don't auto-clear the other mode's stored draft — keep both draft_last_version
+    # and draft_last_list around so per-clause regenerate keeps working after the
+    # user drafts a fresh single clause on top of a list response, and vice versa.
     _write_session_context(
         session_id=session_id,
         agreement_type=effective_agreement_type,
         new_clause_titles=new_titles,
         clear_prior=clear_prior,
         last_version=versions_out[0] if (mode == "single_clause" and versions_out) else None,
-        clear_last_version=(mode == "list_of_clauses"),
+        last_list=clauses_out if mode == "list_of_clauses" and clauses_out else None,
     )
 
-    # 7. Audit log (per-call token usage is emitted by the LLM client)
+    # --- Audit log ---
     latency_ms = int((time.time() - start_time) * 1000)
     logger.info(
         "describe_draft_audit session=%s mode=%s agreement_type=%s "
@@ -790,5 +1009,128 @@ async def generate_describe_draft(
         clauses=clauses_out,
         versions=versions_out,
         regenerated=is_regenerate_hit,
+        grounded_in_document=grounded_in_doc,
+    )
+
+
+async def _regenerate_by_title(
+    session_id: str,
+    target_clause_title: str,
+    refinement_prompt: Optional[str],
+    start_time: float,
+) -> DescribeDraftResponse:
+    """Regenerate a specific clause (by title) from the session's last list or single-clause draft."""
+    ctx = _read_session_context(session_id)
+    stored_agreement_type: Optional[str] = ctx["agreement_type"]
+    prior_clauses: List[str] = ctx["prior_clauses"]
+    last_version: Optional[ClauseVersion] = ctx["last_version"]
+    last_list: List[ClauseListEntry] = ctx["last_list"]
+
+    # Resolve prior clause to regenerate
+    prior_from_list_idx: Optional[int] = None
+    prior_draft: Optional[ClauseVersion] = None
+
+    if last_list:
+        prior_from_list_idx, list_entry = _find_clause_in_list(last_list, target_clause_title)
+        if list_entry is not None:
+            prior_draft = ClauseVersion(
+                title=list_entry.title,
+                summary=list_entry.summary,
+                drafted_clause=list_entry.drafted_clause,
+            )
+
+    if prior_draft is None and last_version is not None:
+        if last_version.title.strip().lower() == target_clause_title.strip().lower():
+            prior_draft = last_version
+
+    if prior_draft is None:
+        return _error_response(
+            session_id,
+            "single_clause",
+            DescribeDraftErrorType.TARGET_NOT_FOUND,
+            f"No prior clause found in session memory with title '{target_clause_title}'.",
+        )
+
+    # Sanitize optional refinement prompt (used as the user_prompt context)
+    refinement_clean = ""
+    if refinement_prompt and refinement_prompt.strip():
+        try:
+            refinement_clean = _sanitize_prompt(refinement_prompt)
+        except ValueError as e:
+            return _error_response(
+                session_id,
+                "single_clause",
+                DescribeDraftErrorType.VALIDATION_FAILED,
+                str(e),
+            )
+
+    # The LLM user_prompt: pass refinement if any, else synthesize a retarget instruction.
+    user_prompt_for_llm = (
+        f"Regenerate the clause titled \"{prior_draft.title}\". "
+        + (f"Refinement: {refinement_clean}" if refinement_clean else "")
+    ).strip()
+
+    # Doc grounding (same as normal path)
+    container = get_service_container()
+    session_obj = container.session_manager.get_or_create_session(session_id)
+    has_document = _session_has_document(session_obj)
+    doc_grounding: Optional[Dict[str, Any]] = None
+    relevant_chunks: List[Dict[str, Any]] = []
+    if has_document:
+        doc_grounding = await _get_doc_grounding(session_id)
+        # Retrieve chunks relevant to the clause title (helps style/defined-term reuse).
+        retrieval_query = f"{prior_draft.title} {refinement_clean}".strip()
+        relevant_chunks = await _retrieve_relevant_chunks(session_id, retrieval_query)
+    grounded_in_doc = bool(doc_grounding and doc_grounding.get("parties"))
+
+    version, error_resp = await _run_single_clause_generation(
+        session_id=session_id,
+        clean_prompt=user_prompt_for_llm,
+        effective_agreement_type=stored_agreement_type,
+        prior_clauses=prior_clauses,
+        prior_draft_for_prompt=prior_draft,
+        doc_grounding=doc_grounding,
+        relevant_chunks=relevant_chunks,
+        is_regenerate=True,
+    )
+    if error_resp is not None:
+        return error_resp
+    assert version is not None
+
+    # Update session: replace prior list entry in place (if applicable) and update last_version
+    updated_list: Optional[List[ClauseListEntry]] = None
+    if prior_from_list_idx is not None and last_list:
+        last_list[prior_from_list_idx] = ClauseListEntry(
+            title=version.title,
+            summary=version.summary,
+            drafted_clause=version.drafted_clause,
+            placeholders=version.placeholders,
+        )
+        updated_list = last_list
+
+    _write_session_context(
+        session_id=session_id,
+        agreement_type=stored_agreement_type,
+        new_clause_titles=[],
+        last_version=version,
+        last_list=updated_list,
+    )
+
+    latency_ms = int((time.time() - start_time) * 1000)
+    logger.info(
+        "describe_draft_audit session=%s mode=single_clause target_title=%s "
+        "regenerate=True grounded=%s latency_ms=%d",
+        session_id,
+        target_clause_title,
+        grounded_in_doc,
+        latency_ms,
+    )
+
+    return DescribeDraftResponse(
+        session_id=session_id,
+        mode="single_clause",
+        status="ok",
+        versions=[version],
+        regenerated=True,
         grounded_in_document=grounded_in_doc,
     )

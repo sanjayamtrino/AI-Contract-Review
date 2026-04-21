@@ -15,6 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.schemas.describe_draft import (
+    ClauseListEntry,
+    ClauseListLLMResponse,
     ClauseVersion,
     DescribeDraftLLMResponse,
     DuplicateCheckResult,
@@ -85,6 +87,10 @@ def _build_container(
             if draft_response is None:
                 raise ValueError("no draft response configured")
             return draft_response
+        if model is ClauseListLLMResponse:
+            if draft_response is None:
+                raise ValueError("no list response configured")
+            return draft_response
         # key_information uses KeyInformationToolResponse; return the raw dict via patched get_key_information instead.
         raise AssertionError(f"Unexpected response_model: {model}")
 
@@ -106,7 +112,20 @@ def _build_container(
 async def test_no_document_attached_skips_grounding():
     """Session without a document → no key_information call, no retrieval, grounded_in_document=False."""
     classification = _make_classification("single_clause", "NDA")
-    draft = _make_draft_response()
+    # No-doc path requires placeholder tokens in the drafted body.
+    draft = DescribeDraftLLMResponse(
+        versions=[
+            ClauseVersion(
+                title="Confidentiality Obligations",
+                summary="A mutual confidentiality undertaking.",
+                drafted_clause=(
+                    "[PARTY A] and [PARTY B] each agree to keep in strict confidence all "
+                    "Confidential Information disclosed by the other party until the "
+                    "[EXPIRATION DATE]. " * 2
+                ),
+            )
+        ]
+    )
     container, _ = _build_container(
         classification=classification,
         draft_response=draft,
@@ -189,9 +208,10 @@ async def test_duplicate_clause_detected_returns_single_clause_exists_mode():
     )
     retrieval_chunks = [
         {
+            "index": 3,
             "content": matching_chunk_text,
             "similarity_score": 0.82,
-            "metadata": {"section_heading": "Confidentiality"},
+            "metadata": {"section_heading": "Confidentiality", "page_number": 7},
         }
     ]
     duplicate_yes = DuplicateCheckResult(is_duplicate=True, matched_title="Confidentiality")
@@ -221,6 +241,12 @@ async def test_duplicate_clause_detected_returns_single_clause_exists_mode():
     assert response.existing_clause.similarity_score == pytest.approx(0.82)
     assert response.grounded_in_document is True
     assert response.versions == []
+    # Location must be populated from the chunk's top-level index + metadata.
+    loc = response.existing_clause.location
+    assert loc is not None
+    assert loc.chunk_index == 3
+    assert loc.section_heading == "Confidentiality"
+    assert loc.page_number == 7
     # LLM calls: classifier + duplicate check = 2 (NO generation call)
     models_called = container._call_log
     assert IntentClassification in models_called
@@ -329,3 +355,153 @@ async def test_regenerate_with_document_skips_duplicate_check():
     assert response.grounded_in_document is True
     # Duplicate-check LLM must NOT have been called on the regenerate path.
     assert DuplicateCheckResult not in container._call_log
+
+
+@pytest.mark.asyncio
+async def test_duplicate_match_with_sparse_metadata_still_returns_some_location():
+    """When the chunk has no metadata keys, location can fall back to the top-level index alone."""
+    classification = _make_classification("single_clause", "NDA")
+
+    key_info_payload = {
+        "parties": [{"name": "Acme Holdings Inc.", "role": "Disclosing Party"}],
+        "governing_law": {"value": "State of Delaware", "information": ""},
+    }
+    retrieval_chunks = [
+        {
+            "index": 11,
+            "content": (
+                "Each party agrees that all Confidential Information received from the "
+                "other shall be held in strict confidence and used solely for the "
+                "Permitted Purpose."
+            ),
+            "similarity_score": 0.77,
+            "metadata": {},  # no section heading or page number
+        }
+    ]
+    duplicate_yes = DuplicateCheckResult(is_duplicate=True, matched_title=None)
+
+    container, _ = _build_container(
+        classification=classification,
+        draft_response=None,
+        has_document=True,
+        key_info_payload=key_info_payload,
+        retrieval_chunks=retrieval_chunks,
+        duplicate_result=duplicate_yes,
+    )
+
+    with patch("src.tools.drafter.get_service_container", return_value=container), \
+         patch("src.tools.key_information.get_key_information",
+               new=AsyncMock(return_value=key_info_payload)):
+        response = await generate_describe_draft(
+            prompt="Draft a confidentiality clause",
+            session_id="test-grounding-loc-sparse",
+        )
+
+    assert response.mode == "single_clause_exists"
+    assert response.existing_clause is not None
+    loc = response.existing_clause.location
+    assert loc is not None
+    assert loc.chunk_index == 11
+    assert loc.section_heading is None
+    assert loc.page_number is None
+
+
+@pytest.mark.asyncio
+async def test_list_of_clauses_with_document_uses_real_party_names_and_no_placeholders():
+    """Doc-grounded list mode: each drafted body uses real party names, no [PLACEHOLDER] tokens."""
+    classification = _make_classification("list_of_clauses", "NDA")
+
+    key_info_payload = {
+        "parties": [
+            {"name": "Acme Holdings Inc.", "role": "Disclosing Party"},
+            {"name": "Beacon Ventures LLC", "role": "Receiving Party"},
+        ],
+        "governing_law": {"value": "State of Delaware", "information": "Delaware law governs."},
+    }
+
+    # Build a 13-clause list where each body uses the real party names.
+    def _body(i: int) -> str:
+        return (
+            f"For purposes of Section {i + 1}, Acme Holdings Inc. and Beacon Ventures LLC "
+            f"agree that the terms set forth apply from the effective date of this Agreement. "
+            f"The Agreement is governed by the laws of the State of Delaware. " * 2
+        )
+
+    list_response = ClauseListLLMResponse(
+        clauses=[
+            ClauseListEntry(
+                title="Definitions" if i == 0 else f"Section {i + 1} — Topic {i}",
+                summary=f"A one-sentence description for section {i + 1}.",
+                drafted_clause=_body(i),
+            )
+            for i in range(13)
+        ]
+    )
+
+    container, _ = _build_container(
+        classification=classification,
+        draft_response=list_response,
+        has_document=True,
+        key_info_payload=key_info_payload,
+        retrieval_chunks=[],  # list mode does not retrieve chunks
+    )
+
+    with patch("src.tools.drafter.get_service_container", return_value=container), \
+         patch("src.tools.key_information.get_key_information",
+               new=AsyncMock(return_value=key_info_payload)):
+        response = await generate_describe_draft(
+            prompt="Draft an NDA",
+            session_id="test-grounding-list",
+        )
+
+    assert response.status == "ok"
+    assert response.mode == "list_of_clauses"
+    assert len(response.clauses) == 13
+    assert response.grounded_in_document is True
+    for entry in response.clauses:
+        assert "Acme Holdings Inc." in entry.drafted_clause
+        assert "Beacon Ventures LLC" in entry.drafted_clause
+        assert entry.placeholders == []  # doc-grounded → no placeholders
+
+
+@pytest.mark.asyncio
+async def test_doc_grounded_draft_containing_placeholders_triggers_validation_error():
+    """Doc-grounded single-clause drafts must not contain [PLACEHOLDER] tokens."""
+    classification = _make_classification("single_clause", "NDA")
+
+    key_info_payload = {
+        "parties": [{"name": "Acme Holdings Inc.", "role": "Disclosing Party"}],
+        "governing_law": {"value": "State of Delaware", "information": ""},
+    }
+
+    # Bad LLM response: pretends to be doc-grounded but still emits [PARTY A].
+    bad_draft = DescribeDraftLLMResponse(versions=[
+        ClauseVersion(
+            title="Confidentiality Obligations",
+            summary="Cross-wired draft that still uses placeholders.",
+            drafted_clause=(
+                "[PARTY A] and [PARTY B] agree to maintain all Confidential Information "
+                "in strict confidence. The obligations survive termination. " * 2
+            ),
+        )
+    ])
+
+    container, _ = _build_container(
+        classification=classification,
+        draft_response=bad_draft,
+        has_document=True,
+        key_info_payload=key_info_payload,
+        retrieval_chunks=[],
+    )
+
+    with patch("src.tools.drafter.get_service_container", return_value=container), \
+         patch("src.tools.key_information.get_key_information",
+               new=AsyncMock(return_value=key_info_payload)):
+        response = await generate_describe_draft(
+            prompt="Draft a confidentiality clause",
+            session_id="test-grounding-forbid",
+        )
+
+    assert response.status == "error"
+    assert response.error_message is not None
+    assert "placeholder" in response.error_message.lower()

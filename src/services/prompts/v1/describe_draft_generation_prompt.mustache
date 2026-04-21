@@ -28,6 +28,16 @@ Relevant existing text from the uploaded document (for style and defined-term co
 {{/has_relevant_chunks}}
 {{/has_doc_grounding}}
 
+{{^has_doc_grounding}}
+NO DOCUMENT CONTEXT: The user has not uploaded a contract. Draft the clause as a reusable standard template. Use `[PLACEHOLDER]` tokens for any fact the user will fill in later — party names, dates, amounts, jurisdictions, defined terms.
+
+Placeholder style (use EXACTLY this format):
+- Square brackets, ALL CAPS, single spaces inside — e.g. `[PARTY A]`, `[PARTY B]`, `[EFFECTIVE DATE]`, `[GOVERNING STATE]`, `[TERM IN MONTHS]`, `[NOTICE PERIOD]`, `[AMOUNT]`.
+- Be consistent: the same concept always uses the same placeholder token throughout the clause.
+- Use placeholders only for facts the user must supply. Do NOT wrap legal phrases or defined terms in placeholders.
+- Populate the `placeholders` field with the distinct tokens you used.
+{{/has_doc_grounding}}
+
 {{#is_regenerate}}
 REGENERATE MODE: The user previously received the draft below and clicked REGENERATE because they wanted a better or different take. Produce ONE new version that is MEANINGFULLY DIFFERENT and an IMPROVEMENT on the previous draft — not a rephrasing. Vary structure, wording, emphasis, carve-outs, remedies, and clause ordering. Tighten where the prior was loose; expand where it was thin.
 
@@ -43,6 +53,7 @@ Provide:
   - title: the clause name (e.g. "Confidentiality", "Term and Termination")
   - summary: one sentence describing what this draft covers and how
   - drafted_clause: the full drafted clause text
+  - placeholders: list of distinct placeholder tokens used (empty list when doc grounding is active)
 
 HARD RULES (violations will cause a retry):
 - Exactly 1 version.
@@ -54,19 +65,24 @@ HARD RULES (violations will cause a retry):
 {{#has_doc_grounding}}
 - Use the EXACT party names listed above. Do not substitute "Party A", "[CUSTOMER]", "the Company", or any placeholder form.
 - Do not change or contradict the governing law stated above.
+- Leave the `placeholders` field as an empty list.
+{{/has_doc_grounding}}
+{{^has_doc_grounding}}
+- The drafted_clause MUST contain at least one `[PLACEHOLDER]` token.
+- Every placeholder used in the draft MUST appear once in the `placeholders` output array, in the exact `[ALL CAPS]` bracketed form.
 {{/has_doc_grounding}}
 {{#is_regenerate}}
 - The draft MUST be materially different from the previous draft above. Substantive changes to wording, structure, and emphasis — not a synonym swap.
 {{/is_regenerate}}
 
-Return ONLY valid JSON matching: {"versions": [{"title": "...", "summary": "...", "drafted_clause": "..."}]}
+Return ONLY valid JSON matching: {"versions": [{"title": "...", "summary": "...", "drafted_clause": "...", "placeholders": ["...", "..."]}]}
 No prose, no markdown.
 {{/is_single_clause}}
 
 {{#is_list_of_clauses}}
 TASK: {{mode_instruction}}
 
-The user asked for an agreement type. Return ONE comprehensive list of ALL the clauses that a complete, production-ready version of this agreement type should contain.
+The user asked for an agreement type. Return ONE comprehensive list of ALL the clauses that a complete, production-ready version of this agreement type should contain — and for each clause, include the full drafted body so the user can pick, fill, and drop the clauses straight into their document.
 
 Do NOT return multiple versions of the list. Return a single list.
 
@@ -74,19 +90,51 @@ Include every standard, business, and boilerplate clause an experienced attorney
 
 Each clause in the list must be a real, named clause for THIS specific agreement type — not a version label, not a stylistic descriptor. Every clause must be distinct; no duplicates or trivially-renamed duplicates.
 
+{{#has_doc_grounding}}
+DOCUMENT CONTEXT: A contract has been uploaded to this session. Each drafted_clause body MUST use the EXACT party names listed below and align with the governing law — no placeholders, no square-bracket tokens.
+
+Parties (use these EXACT names; do not invent or abbreviate):
+{{doc_parties_block}}
+
+Governing law (align the clauses with this; do not contradict):
+{{doc_governing_law}}
+{{/has_doc_grounding}}
+
+{{^has_doc_grounding}}
+NO DOCUMENT CONTEXT: The user has not uploaded a contract. Draft each clause as a reusable standard template. Use `[PLACEHOLDER]` tokens for any fact the user will fill in later.
+
+Placeholder style (use EXACTLY this format across the whole list):
+- Square brackets, ALL CAPS, single spaces inside — e.g. `[PARTY A]`, `[PARTY B]`, `[EFFECTIVE DATE]`, `[GOVERNING STATE]`, `[TERM IN MONTHS]`, `[NOTICE PERIOD]`, `[AMOUNT]`.
+- Reuse the SAME tokens across clauses so the user can do one find-and-replace per token (every reference to the first party is `[PARTY A]`, every reference to the governing state is `[GOVERNING STATE]`, etc.).
+- Use placeholders only for facts the user must supply. Do NOT wrap legal phrases or defined terms in placeholders.
+- Populate each entry's `placeholders` field with the distinct tokens that clause uses.
+{{/has_doc_grounding}}
+
 For each clause provide:
   - title: the clause name as it would appear in the agreement (e.g. "Definitions", "Confidentiality Obligations", "Governing Law and Jurisdiction", "Service Levels", "Compensation", "Rent Payment")
   - summary: a one-sentence description of what this clause covers
+  - drafted_clause: the full drafted clause body ready to paste into the agreement
+  - placeholders: list of distinct placeholder tokens used in this clause's body (empty list when doc grounding is active)
 
 For mutual or bilateral agreements, the list must be symmetric between the parties — no one-sided clauses.
 
 HARD RULES (violations will cause a retry):
 - Do not return multiple versions. Return a single list.
 - At least 12 clauses.
-- No archaic legalese in any summary.
+- Every drafted_clause body is non-empty and substantive (not just a restated summary).
+- No archaic legalese in any summary or drafted body.
 - Every clause title is the name of a real clause — not an axis label.
+{{#has_doc_grounding}}
+- Every drafted_clause uses the EXACT party names above. No placeholders, no square-bracket tokens.
+- Leave the `placeholders` field as an empty list for every clause.
+{{/has_doc_grounding}}
+{{^has_doc_grounding}}
+- Every drafted_clause MUST contain at least one `[PLACEHOLDER]` token.
+- Every placeholder used in a drafted body MUST appear once in that entry's `placeholders` array, in the exact `[ALL CAPS]` bracketed form.
+- Placeholder tokens MUST be reused consistently across the whole list.
+{{/has_doc_grounding}}
 
-Return ONLY valid JSON matching: {"clauses": [ {"title": "...", "summary": "..."}, ... ]}
+Return ONLY valid JSON matching: {"clauses": [ {"title": "...", "summary": "...", "drafted_clause": "...", "placeholders": ["...", "..."]}, ... ]}
 No prose, no markdown.
 {{/is_list_of_clauses}}
 
