@@ -40,9 +40,11 @@ logger = logging.getLogger(__name__)
 # Retrieval settings for doc-grounded drafting
 _RETRIEVAL_TOP_K = 4
 # Minimum similarity score on the top chunk to trigger LLM duplicate confirmation.
-# FAISS with normalized embeddings produces cosine similarities in roughly [0, 1].
-# 0.55 catches obvious duplicates without flagging tangentially related text.
-_DUPLICATE_SIMILARITY_GATE = 0.55
+# The local MiniLM-L6-v2 embeddings produce cosine scores in roughly [0, 1]
+# but the distribution is tighter than OpenAI embeddings — a chunk clearly on the
+# same topic typically scores 0.40–0.70. The LLM confirmation call is the real
+# accuracy gate, so we keep this threshold low to avoid false negatives.
+_DUPLICATE_SIMILARITY_GATE = 0.40
 
 # --- Banned phrase list for post-generation validator ---
 _BANNED_PHRASES = [
@@ -455,16 +457,25 @@ async def _check_duplicate_clause(
 
     Two-stage gate: (1) similarity score must exceed _DUPLICATE_SIMILARITY_GATE, and
     (2) a cheap LLM confirmation call must agree. Only returns a match when both pass.
+
+    Each decision point emits an INFO log so operators can see exactly why a
+    candidate was or wasn't flagged as a duplicate.
     """
     if not chunks:
+        logger.info("duplicate_check skipped — no retrieval chunks")
         return None
     top = chunks[0]
     score = float(top.get("similarity_score") or 0.0)
     if score < _DUPLICATE_SIMILARITY_GATE:
+        logger.info(
+            "duplicate_check skipped — top similarity %.3f below gate %.3f",
+            score, _DUPLICATE_SIMILARITY_GATE,
+        )
         return None
 
     candidate_text = (top.get("content") or "").strip()
     if not candidate_text:
+        logger.info("duplicate_check skipped — top chunk content empty")
         return None
 
     container = get_service_container()
@@ -486,6 +497,11 @@ async def _check_duplicate_clause(
     except Exception as e:
         logger.warning("duplicate-check LLM call failed error=%s", str(e))
         return None
+
+    logger.info(
+        "duplicate_check result — similarity=%.3f is_duplicate=%s matched_title=%s",
+        score, result.is_duplicate, result.matched_title or "(none)",
+    )
 
     if not result.is_duplicate:
         return None
