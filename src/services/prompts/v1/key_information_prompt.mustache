@@ -22,7 +22,7 @@ Return a valid JSON object with this exact structure:
 
 {
   "summary": "6–8 sentences: identify the parties and their roles, the core grant of rights, 
-               the top 3 risks to the non-drafting party (XYZ Inc.), whether the agreement is 
+               the top 3 risks to the non-drafting party, whether the agreement is 
                balanced or one-sided, and your recommendation on whether to sign as-is or 
                request amendments",
 
@@ -66,14 +66,14 @@ Return a valid JSON object with this exact structure:
     {
       "issue_title": "short descriptive title (e.g., 'No Limitation of Liability Cap')",
       "severity": "Critical | High | Medium | Low",
-      "clause_title": "For present clauses: exact clause name as written in the contract. For missing clauses: 'Missing Clause'",
+      "clause_title": "For present clauses: exact clause name as written in the contract. For missing clauses: Name of the standard clause that is absent (e.g., 'Limitation of Liability', 'Indemnification', 'Data Protection')",
       "issue_type": "Missing Clause | Ambiguity | One-Sided Provision | Unusual Obligation | 
                      Broad Term | Unenforceable Clause | Jurisdiction Risk | Other",
       "issue": "For present clauses: quote the exact contract language creating the risk, state the consequence, and name the party that bears it. 
                 For missing clauses: state clearly that this clause does not appear anywhere in the contract, 
                 identify what standard protection it would provide, and explain the specific legal consequence 
-                of its absence for XYZ Inc.",
-      "scenario": "Concrete 2-sentence scenario using 'Epit' and 'XYZ Inc.' by name showing 
+                of its absence for the documment.",
+      "scenario": "Concrete 2-sentence scenario for the parties in the document by name showing 
                    exactly how this clause — or its absence — causes real harm",
       "fix": "Ready-to-insert replacement or new clause language. 
               For present clauses: 'Replace [current text] with: [new text]' OR 'Add after [clause reference]: [new text]'. 
