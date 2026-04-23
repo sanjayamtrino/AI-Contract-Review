@@ -14,6 +14,11 @@ CRITICAL RULES:
 - Never hallucinate — every value must be directly supported by the contract text
 - If a field is absent from the contract, write: "Absent — [specific legal consequence]"
 - Return ONLY the JSON object — no preamble, no explanation, no markdown fences
+- For Risk and Compliance Insights, if a standard protective clause is missing, confirm its absence by stating: 
+  "This clause does not appear anywhere in the contract." Don't fabricate missing clauses — only flag a clause as missing if it genuinely does not exist anywhere in the contract text.
+  Even if there is a part of the missing clause is in the contract, Make it ambbiguos and don't mention the missing clause. For example, if there is a partial indemnification clause that only covers certain types of claims, do not flag "Indemnification" as missing — instead, identify the specific ambiguity or gap in the existing clause language that creates risk.
+  If the clause is present but creates risk, quote the exact contract language creating the risk, state the consequence, and name the party that bears it.
+  Don't false flag a clause as risky if it is present and balanced — only identify risk if the clause language itself creates a legal or commercial risk for one of the parties.
 
 CONTRACT TEXT:
 {{contract_text}}
