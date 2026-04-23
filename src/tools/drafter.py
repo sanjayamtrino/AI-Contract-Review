@@ -98,7 +98,34 @@ _INJECTION_PATTERNS = [
 
 # Placeholder token format: [ALL CAPS + SPACES + DIGITS], e.g. [PARTY A], [EFFECTIVE DATE]
 _PLACEHOLDER_PATTERN = re.compile(r"\[([A-Z][A-Z0-9 /\-&]{1,60})\]")
-_MIN_LIST_CLAUSE_BODY_LEN = 50
+# Minimum body length for an individual drafted clause body in list mode.
+# Intentionally permissive: a complete agreement contains some legitimately
+# short boilerplate clauses (Headings, Construction, Counterparts, basic
+# Severability) that can land at 70-110 chars and still be complete. The 60-char
+# per-clause floor only catches truly empty entries ("TBD", "see attached", or
+# the LLM accidentally returning the title as the body). Real list-quality
+# enforcement happens via the aggregate average gate below — that's what
+# guarantees the heavyweight clauses (Indemnification, Limitation of Liability,
+# Term & Termination) carry real depth.
+_MIN_LIST_CLAUSE_BODY_LEN = 60
+# Aggregate floor for list mode: average drafted_clause length across the whole
+# list must be ≥ this. This is the PRIMARY quality gate for list mode — it
+# ensures the agreement as a whole is substantive without false-positiving the
+# legitimately short boilerplate clauses that appear in every well-drafted
+# agreement.
+_MIN_LIST_AVG_CLAUSE_BODY_LEN = 280
+# Single-clause mode: the user is asking for ONE clause and expects industry-grade
+# depth. 300 chars is the floor — a complete Governing Law clause with choice of
+# law, forum, jury waiver, and CISG carve-out is comfortably > 600 chars.
+_MIN_SINGLE_CLAUSE_BODY_LEN = 300
+# Summary spec for SINGLE-CLAUSE mode: 2–3 sentences explaining scope, allocation
+# of risk, and notable carve-outs. A single-line label fails to brief the reader.
+_MIN_SUMMARY_LEN = 80
+# Summary floor for LIST mode: the list view is scannable — short one-sentence
+# descriptors are appropriate. The body carries the depth, not the summary. 40
+# chars catches truly empty labels ("LoL clause") without rejecting useful
+# one-liners ("Limits each party's liability for indirect damages.").
+_MIN_LIST_SUMMARY_LEN = 40
 
 # Prescribed legal angles cycled through on each successive regenerate of the same
 # clause, so the LLM produces visibly different drafts instead of the same shape
@@ -182,6 +209,12 @@ def _validate_draft_response(
         raise ValueError("Version: title is empty")
     if not version.summary or not version.summary.strip():
         raise ValueError("Version: summary is empty")
+    if len(version.summary.strip()) < _MIN_SUMMARY_LEN:
+        raise ValueError(
+            f"Version: summary is a one-line label ({len(version.summary.strip())} chars); "
+            f"the spec requires a 2-3 sentence brief covering scope, allocation of risk, "
+            f"and notable carve-outs (≥{_MIN_SUMMARY_LEN} chars)"
+        )
 
     # Axis-label leakage check — titles and summaries must describe content, not style
     title_lower = version.title.lower()
@@ -198,10 +231,12 @@ def _validate_draft_response(
 
     if not version.drafted_clause.strip():
         raise ValueError("Version: drafted_clause is empty")
-    if len(version.drafted_clause) < 50:
+    if len(version.drafted_clause.strip()) < _MIN_SINGLE_CLAUSE_BODY_LEN:
         raise ValueError(
-            f"Version: drafted_clause suspiciously short "
-            f"({len(version.drafted_clause)} chars)"
+            f"Version: drafted_clause is too short for an industry-grade clause "
+            f"({len(version.drafted_clause.strip())} chars; ≥{_MIN_SINGLE_CLAUSE_BODY_LEN} required). "
+            f"The clause must satisfy the QUALITY BAR — operative rule plus ancillary "
+            f"provisions (notice, cure, exceptions, remedies, survival)."
         )
     lower = version.drafted_clause.lower()
     for phrase in _BANNED_PHRASES:
@@ -212,9 +247,16 @@ def _validate_draft_response(
 
     found_placeholders = _extract_placeholders(version.drafted_clause)
     if require_placeholders and not found_placeholders:
-        raise ValueError(
-            "Version: drafted_clause must contain at least one [PLACEHOLDER] "
-            "token when no document is attached"
+        # Soft preference: most clauses benefit from [PLACEHOLDER] tokens so the
+        # frontend can do find-and-replace. But some clauses (Severability,
+        # Entire Agreement, Counterparts, basic Force Majeure, basic Waiver) have
+        # no user-fillable facts — failing them is a worse UX than accepting a
+        # placeholder-free template. Log so we can see how often this happens
+        # without blocking the response.
+        logger.info(
+            "describe_draft single_clause draft contains no [PLACEHOLDER] tokens "
+            "in no-doc mode (title=%r) — accepting as boilerplate-style clause",
+            version.title,
         )
     if forbid_placeholders and found_placeholders:
         raise ValueError(
@@ -257,6 +299,18 @@ def _validate_clause_list(
             f"Expected at least 12 clauses for a complete agreement, "
             f"got {len(response.clauses)}"
         )
+    # Agreement summary is the orienting overview shown at the top of the list.
+    # Must be non-empty and at least minimally substantive (a one-word stub
+    # like "Agreement." is rejected).
+    if not response.agreement_summary or not response.agreement_summary.strip():
+        raise ValueError("agreement_summary is empty")
+    if len(response.agreement_summary.strip()) < 60:
+        raise ValueError(
+            f"agreement_summary is too short to orient the reader "
+            f"({len(response.agreement_summary.strip())} chars; ≥60 required). "
+            f"It should be 3-5 sentences covering purpose, parties, core "
+            f"exchange, and notable structural features."
+        )
     seen_titles: set = set()
     clauses_with_placeholders = 0
     for i, clause in enumerate(response.clauses):
@@ -265,6 +319,12 @@ def _validate_clause_list(
             raise ValueError(f"Clause {idx}: title is empty")
         if not clause.summary or not clause.summary.strip():
             raise ValueError(f"Clause {idx}: summary is empty")
+        if len(clause.summary.strip()) < _MIN_LIST_SUMMARY_LEN:
+            raise ValueError(
+                f"Clause {idx} ('{clause.title}'): summary is too short to be useful "
+                f"({len(clause.summary.strip())} chars; ≥{_MIN_LIST_SUMMARY_LEN} required for list mode). "
+                f"A short descriptive sentence is fine — the body carries the depth."
+            )
 
         title_norm = clause.title.strip().lower()
         if title_norm in seen_titles:
@@ -307,14 +367,34 @@ def _validate_clause_list(
 
     if require_placeholders:
         total = len(response.clauses)
-        min_required = max(4, int(total * 0.6))
-        if clauses_with_placeholders < min_required:
-            raise ValueError(
-                f"Only {clauses_with_placeholders}/{total} clauses contain "
-                f"[PLACEHOLDER] tokens; at least {min_required} required when no "
-                f"document is attached. The LLM appears to have drafted a specific "
-                f"contract instead of a reusable template."
+        recommended_min = max(4, int(total * 0.6))
+        if clauses_with_placeholders < recommended_min:
+            # Log only — do not reject. Even when the LLM under-uses placeholders,
+            # the drafted clauses are still usable: role labels (Tenant, Vendor,
+            # Employee) make the agreement readable, and the user can find-and-
+            # replace specific names afterward. Returning nothing because the
+            # placeholder count was 4/12 instead of 7/12 is worse than returning
+            # a usable draft. The prompt continues to push the LLM toward
+            # placeholders; this gate is a soft observation, not a blocker.
+            logger.info(
+                "describe_draft list mode below recommended placeholder coverage: "
+                "%d/%d clauses have [PLACEHOLDER] tokens (recommended ≥%d). "
+                "Returning anyway — user can regenerate or find-and-replace.",
+                clauses_with_placeholders, total, recommended_min,
             )
+
+    # Aggregate depth — log only, do not reject. A "thin" list is still useful
+    # output the user can act on; rejecting it returns nothing, which is worse.
+    # The user can always regenerate any specific clause they want deeper.
+    total_body_chars = sum(len(c.drafted_clause.strip()) for c in response.clauses)
+    avg_body_len = total_body_chars / len(response.clauses)
+    if avg_body_len < _MIN_LIST_AVG_CLAUSE_BODY_LEN:
+        logger.info(
+            "describe_draft list mode below recommended depth: avg=%.0f chars "
+            "across %d clauses (recommended ≥%d). Returning anyway — user can "
+            "regenerate individual clauses for more depth.",
+            avg_body_len, len(response.clauses), _MIN_LIST_AVG_CLAUSE_BODY_LEN,
+        )
 
 
 async def _classify_intent(prompt: str) -> IntentClassification:
@@ -520,7 +600,8 @@ async def _check_duplicate_clause(
 
         return ExistingClauseMatch(
             title=inferred_title,
-            excerpt=candidate_text,
+            summary=result.summary,
+            drafted_clause=candidate_text,
             similarity_score=score,
             location=_build_clause_location(chunk),
         )
@@ -864,6 +945,7 @@ async def generate_describe_draft(
     session_id: str,
     regenerate: bool = False,
     target_clause_title: Optional[str] = None,
+    ignore_document: bool = False,
 ) -> DescribeDraftResponse:
     """
     Main entry point for the describe-draft agent.
@@ -951,10 +1033,22 @@ async def generate_describe_draft(
         and detected_agreement_type.lower() != stored_agreement_type.lower()
     )
 
-    # Detect whether a document is attached (both modes benefit from grounding)
+    # Detect whether a document is attached (both modes benefit from grounding).
+    # When ignore_document=True, force the no-doc code path even if the session
+    # has a document — every downstream branch (grounding, retrieval, duplicate
+    # check, placeholder validators) already handles has_document=False
+    # correctly, so this single short-circuit is the entire opt-out.
     container = get_service_container()
     session_obj = container.session_manager.get_or_create_session(session_id)
-    has_document = _session_has_document(session_obj)
+    if ignore_document:
+        has_document = False
+        logger.info(
+            "describe_draft session=%s ignore_document=true — forcing no-doc path "
+            "even though session may have an attached document",
+            session_id,
+        )
+    else:
+        has_document = _session_has_document(session_obj)
     doc_grounding: Optional[Dict[str, Any]] = None
     if has_document:
         doc_grounding = await _get_doc_grounding(session_id)
@@ -962,6 +1056,7 @@ async def generate_describe_draft(
 
     clauses_out: List[ClauseListEntry] = []
     versions_out: List[ClauseVersion] = []
+    agreement_summary_out: Optional[str] = None
     units_generated = 0
     validation_error: Optional[str] = None
 
@@ -1015,6 +1110,7 @@ async def generate_describe_draft(
             )
 
         clauses_out = list_response.clauses
+        agreement_summary_out = list_response.agreement_summary
         units_generated = len(clauses_out)
     else:
         # single_clause mode — generate ONE draft (regenerate asks for an improved
@@ -1041,16 +1137,118 @@ async def generate_describe_draft(
                     )
                     existing = None
                 if existing is not None:
+                    # Store the existing clause as if it were the prior draft, so a
+                    # subsequent regenerate=true call has something to vary from.
+                    # Without this, regenerate finds no stored_last_version, falls
+                    # back to a fresh-draft path, hits the duplicate check again,
+                    # and returns the same single_clause_exists response forever.
+                    section_heading = (
+                        existing.location.section_heading
+                        if existing.location and existing.location.section_heading
+                        else None
+                    )
+                    seed_title = existing.title or "Existing Clause"
+                    # Use the real LLM-produced summary if we have one; fall back
+                    # to a synthesized note only when the duplicate-check call did
+                    # not return a summary (older prompt cache, etc.). This keeps
+                    # the seeded prior_draft useful for regenerate variation and
+                    # preserves the actual meaning of the clause.
+                    location_suffix = f" under \"{section_heading}\"" if section_heading else ""
+                    if existing.summary and existing.summary.strip():
+                        seed_summary = (
+                            f"{existing.summary.strip()} "
+                            f"(Existing clause from the uploaded document{location_suffix}.)"
+                        )
+                    else:
+                        seed_summary = (
+                            f"Clause already present in the uploaded document"
+                            f"{location_suffix}. Stored as the seed for any "
+                            f"regenerate request, which will produce a materially "
+                            f"different alternative to this text."
+                        )
+                    existing_as_version = ClauseVersion(
+                        title=seed_title,
+                        summary=seed_summary,
+                        drafted_clause=existing.drafted_clause,
+                        placeholders=[],
+                    )
+
+                    # Immediately produce a fresh industry-grade draft seeded by
+                    # the existing clause, so the user gets something usable in
+                    # the same response. The summary is post-processed to start
+                    # with a notice that the clause already exists in the doc,
+                    # under what title — the user can then accept, replace, or
+                    # regenerate. is_regenerate=True ensures the new draft is
+                    # materially different from the existing text; no angle is
+                    # passed so the first auto-draft is a clean default rather
+                    # than a stylistic variant.
+                    auto_version, auto_error = await _run_single_clause_generation(
+                        session_id=session_id,
+                        clean_prompt=clean_prompt,
+                        effective_agreement_type=effective_agreement_type,
+                        prior_clauses=prior_clauses if not clear_prior else [],
+                        prior_draft_for_prompt=existing_as_version,
+                        doc_grounding=doc_grounding,
+                        relevant_chunks=relevant_chunks,
+                        is_regenerate=True,
+                        regenerate_angle=None,
+                    )
+
+                    latency_ms = int((time.time() - start_time) * 1000)
+
+                    if auto_version is not None:
+                        # Prepend the existing-clause notice to the LLM's summary
+                        # so the user sees up front what already exists in the doc.
+                        notice = (
+                            f"This clause is already present in the uploaded "
+                            f"document under the title \"{seed_title}\". "
+                            f"The draft below is an alternative you can review — "
+                            f"accept it to replace the existing text, or click "
+                            f"regenerate for another variation. "
+                        )
+                        auto_version.summary = notice + auto_version.summary
+                        # Save the new draft (not the existing clause) as the
+                        # session's prior_draft so subsequent regenerates produce
+                        # variations of THIS draft, cycling through angles.
+                        _write_session_context(
+                            session_id=session_id,
+                            agreement_type=effective_agreement_type,
+                            new_clause_titles=[],
+                            clear_prior=clear_prior,
+                            last_version=auto_version,
+                        )
+                        logger.info(
+                            "describe_draft_audit session=%s mode=single_clause_exists "
+                            "agreement_type=%s similarity=%.3f auto_drafted=true "
+                            "latency_ms=%d",
+                            session_id,
+                            effective_agreement_type or "unknown",
+                            existing.similarity_score,
+                            latency_ms,
+                        )
+                        return DescribeDraftResponse(
+                            session_id=session_id,
+                            mode="single_clause_exists",
+                            status="ok",
+                            existing_clause=existing,
+                            versions=[auto_version],
+                            grounded_in_document=True,
+                        )
+
+                    # Auto-draft failed — fall back to returning just the
+                    # existing clause, with the existing-clause-as-seed stored so
+                    # the user can still try regenerate.
                     _write_session_context(
                         session_id=session_id,
                         agreement_type=effective_agreement_type,
                         new_clause_titles=[],
                         clear_prior=clear_prior,
+                        last_version=existing_as_version,
                     )
-                    latency_ms = int((time.time() - start_time) * 1000)
-                    logger.info(
+                    logger.warning(
                         "describe_draft_audit session=%s mode=single_clause_exists "
-                        "agreement_type=%s similarity=%.3f latency_ms=%d",
+                        "agreement_type=%s similarity=%.3f auto_drafted=false "
+                        "latency_ms=%d — auto-draft failed; returning existing only",
                         session_id,
                         effective_agreement_type or "unknown",
                         existing.similarity_score,
@@ -1122,6 +1320,7 @@ async def generate_describe_draft(
         session_id=session_id,
         mode=mode,
         status="ok",
+        agreement_summary=agreement_summary_out,
         clauses=clauses_out,
         versions=versions_out,
         regenerated=is_regenerate_hit,

@@ -14,6 +14,7 @@ async def run(
     session_id: str,
     regenerate: bool = False,
     target_clause_title: Optional[str] = None,
+    ignore_document: bool = False,
 ) -> DescribeDraftResponse:
     """Run the describe-and-draft agent for a session."""
     return await generate_describe_draft(
@@ -21,4 +22,5 @@ async def run(
         session_id=session_id,
         regenerate=regenerate,
         target_clause_title=target_clause_title,
+        ignore_document=ignore_document,
     )

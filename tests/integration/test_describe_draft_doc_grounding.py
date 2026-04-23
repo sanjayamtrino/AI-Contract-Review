@@ -6,7 +6,8 @@ Covers:
 - Session with document → drafter invokes key_information extraction + retrieval,
   injects parties + governing law into the prompt, and flags grounded_in_document=True.
 - Session with document where retrieval returns a matching clause + LLM confirms →
-  response mode is single_clause_exists with the existing clause excerpt.
+  response mode is single_clause_exists with the existing clause body in
+  drafted_clause.
 - Regenerate with document → duplicate check is skipped.
 """
 from typing import Optional
@@ -237,7 +238,7 @@ async def test_duplicate_clause_detected_returns_single_clause_exists_mode():
     assert response.mode == "single_clause_exists"
     assert response.existing_clause is not None
     assert response.existing_clause.title == "Confidentiality"
-    assert "Confidentiality" in response.existing_clause.excerpt
+    assert "Confidentiality" in response.existing_clause.drafted_clause
     assert response.existing_clause.similarity_score == pytest.approx(0.82)
     assert response.grounded_in_document is True
     assert response.versions == []

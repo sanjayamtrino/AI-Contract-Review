@@ -40,6 +40,18 @@ class DescribeDraftRequest(BaseModel):
         ),
         max_length=300,
     )
+    ignore_document: bool = Field(
+        default=False,
+        description=(
+            "When true, the agent treats this call as no-document mode even if a "
+            "document is attached to the session — it skips document grounding, "
+            "skips the existing-clause duplicate check, and drafts a reusable "
+            "template with [PLACEHOLDER] tokens. Useful when the user wants a "
+            "generic template draft on a session that already has an upload from "
+            "an earlier interaction. Default false preserves the document-grounded "
+            "behavior."
+        ),
+    )
 
     @model_validator(mode="after")
     def _require_prompt_or_target(self) -> "DescribeDraftRequest":
@@ -113,6 +125,14 @@ class ClauseVersion(BaseModel):
 class ClauseListLLMResponse(BaseModel):
     """Raw LLM output for list_of_clauses mode — one complete clause list."""
 
+    agreement_summary: str = Field(
+        description=(
+            "Overall 3-5 sentence summary of the agreement: what it is for, who "
+            "the parties are, the core exchange or obligations, and any notable "
+            "structural features (term, key carve-outs). Shown at the top of the "
+            "list so the user can orient themselves before scrolling clauses."
+        ),
+    )
     clauses: List[ClauseListEntry] = Field(
         min_length=8,
         description=(
@@ -135,6 +155,14 @@ class DuplicateCheckResult(BaseModel):
         default=None,
         description="Heading/title of the existing clause, if one is discernible.",
     )
+    summary: Optional[str] = Field(
+        default=None,
+        description=(
+            "2-3 sentence plain-English explanation of what the matched clause "
+            "actually does — scope, allocation of risk, and notable carve-outs. "
+            "Only populated when is_duplicate is true."
+        ),
+    )
 
 
 class ClauseLocation(BaseModel):
@@ -155,14 +183,32 @@ class ClauseLocation(BaseModel):
 
 
 class ExistingClauseMatch(BaseModel):
-    """Describes a clause already present in the uploaded document that matches the request."""
+    """Describes a clause already present in the uploaded document that matches the request.
+
+    Field names mirror the freshly-drafted clause shape (title, summary,
+    drafted_clause) so frontends can use the same renderer for both. The only
+    difference is `drafted_clause` here is verbatim text pulled from the user's
+    document, not a new draft.
+    """
 
     title: Optional[str] = Field(
         default=None,
         description="Heading or inferred title of the existing clause.",
     )
-    excerpt: str = Field(
-        description="Verbatim text of the existing clause as pulled from the document."
+    summary: Optional[str] = Field(
+        default=None,
+        description=(
+            "2-3 sentence plain-English explanation of what the matched clause "
+            "does — scope, allocation of risk, and notable carve-outs. Surfaces "
+            "the same kind of summary a freshly drafted clause carries."
+        ),
+    )
+    drafted_clause: str = Field(
+        description=(
+            "Verbatim text of the existing clause as pulled from the document. "
+            "Field is named drafted_clause to match the shape of freshly-drafted "
+            "single_clause and list_of_clauses responses."
+        ),
     )
     similarity_score: float = Field(
         description="Retrieval similarity score of the matched chunk."
@@ -222,6 +268,14 @@ class DescribeDraftResponse(BaseModel):
     status: Literal["ok", "error"]
     disclaimer: Optional[str] = "AI-generated draft. Subject to attorney review before use."
     clarification_question: Optional[str] = None
+    agreement_summary: Optional[str] = Field(
+        default=None,
+        description=(
+            "Populated only in list_of_clauses mode — overall 3-5 sentence "
+            "summary of the agreement (what it is for, parties, core exchange, "
+            "notable structural features). Shown at the top of the list."
+        ),
+    )
     clauses: List[ClauseListEntry] = Field(
         default_factory=list,
         description="Populated only in list_of_clauses mode.",

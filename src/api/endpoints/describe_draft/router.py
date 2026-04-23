@@ -43,4 +43,5 @@ async def generate_draft(
         session_id=session_id,
         regenerate=request.regenerate,
         target_clause_title=request.target_clause_title,
+        ignore_document=request.ignore_document,
     )
