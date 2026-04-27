@@ -102,6 +102,14 @@ class PlayBookReviewLLMResponse(BaseModel):
     """Schema for the LLM response for the given rule and para."""
 
     para_identifiers: List[str] = Field(..., description="List of Paragraphs that matched the rule.")
+    matched_clause_name: str = Field(
+        default="",
+        description=(
+            "Concise human-readable label of the clause the rule was matched "
+            "against (e.g. 'Confidentiality', 'Governing Law'). Max 5 words. "
+            "Empty string when status is 'Not Found'."
+        ),
+    )
     status: ResponseStatus = Field(..., description="Status of the given rules and para (critical, medium, low, good)")
     reason: str = Field(..., description="Reason of the Review either good or bad,")
     suggestion: str = Field(..., description="A brief suggestion of the paragraphs over the rule.")

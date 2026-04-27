@@ -1,6 +1,11 @@
+import asyncio
 import re
 import unicodedata
+from difflib import SequenceMatcher
+from pathlib import Path
+from typing import List, Optional, Tuple
 
+import numpy as np
 from docx.document import Document
 
 from src.config.logging import get_logger
@@ -10,6 +15,7 @@ from src.schemas.playbook_review import (
     PlayBookReviewLLMResponse,
     PlayBookReviewResponse,
     RuleCheckRequest,
+    RuleInfo,
 )
 from src.services.session_manager import SessionData
 
@@ -18,86 +24,249 @@ logger = get_logger(__name__)
 
 AGENT_NAME = "playbook_review_agent"
 
+# Hybrid title matching thresholds.
+FUZZY_TITLE_THRESHOLD = 0.65
+TITLE_EMBEDDING_THRESHOLD = 0.55
+
+# Rule-title content words that should not influence fuzzy token-overlap.
+_TITLE_STOP_WORDS = {
+    "the", "a", "an", "and", "or", "of", "to", "for", "in", "on", "at",
+    "by", "with", "from", "this", "that", "these", "those",
+}
+
+_TITLE_WORD_PATTERN = re.compile(r"\b[a-z]{3,}\b")
+
 
 def normalize(text: str) -> str:
     if not text:
         return ""
-    # Normalize unicode
     text = unicodedata.normalize("NFKC", text)
-    # Replace all whitespace (including non-breaking) with single space
     text = re.sub(r"\s+", " ", text)
     return text.strip().lower()
 
 
-async def playbook_review_service(document: Document, request: RuleCheckRequest, session_data: SessionData) -> PlayBookReviewFinalResponse:
-    """Function to review a document against playbook rules by parsing the document and storing it in session."""
+def _content_tokens(text: str) -> set:
+    """Lowercase content tokens (>=3 chars), with stop-words removed."""
+    return {
+        t for t in _TITLE_WORD_PATTERN.findall(text.lower())
+        if t not in _TITLE_STOP_WORDS
+    }
 
-    # Step 1: Parse the document using AI parser and store in session
+
+def _fuzzy_title_ratio(rule_title: str, clause_heading: str) -> float:
+    """[0, 1] similarity between a rule title and a clause heading.
+
+    Combines token-overlap (every content word of the rule appearing in the
+    heading) with character-level SequenceMatcher. Returns the max so single-
+    token rules and multi-word rules both behave well.
+    """
+    if not rule_title or not clause_heading:
+        return 0.0
+    a = normalize(rule_title)
+    b = normalize(clause_heading)
+    if not a or not b:
+        return 0.0
+    rule_tokens = _content_tokens(a)
+    head_tokens = _content_tokens(b)
+    token_overlap = (
+        len(rule_tokens & head_tokens) / len(rule_tokens) if rule_tokens else 0.0
+    )
+    seq_ratio = SequenceMatcher(None, a, b).ratio()
+    return max(token_overlap, seq_ratio)
+
+
+async def _find_matching_chunk(
+    rule: RuleInfo,
+    chunks,
+    rule_embedding: Optional[np.ndarray],
+    head_embeddings: Optional[np.ndarray],
+    headed_chunks: List,
+) -> Tuple[Optional[object], str]:
+    """Pick the best chunk for a rule using fuzzy then embedding fallback.
+
+    Returns (chunk_or_None, strategy). strategy is one of
+    "title_fuzzy", "title_embedding", or "" when nothing matched.
+    """
+    # 1) Fuzzy
+    best_chunk = None
+    best_ratio = 0.0
+    for chunk in chunks:
+        heading = chunk.metadata.get("section_heading", "") if chunk.metadata else ""
+        if not heading:
+            continue
+        ratio = _fuzzy_title_ratio(rule.title, heading)
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_chunk = chunk
+
+    if best_ratio >= FUZZY_TITLE_THRESHOLD and best_chunk is not None:
+        logger.info(
+            "Title match (fuzzy %.2f): rule '%s' -> clause '%s'",
+            best_ratio, rule.title,
+            best_chunk.metadata.get("section_heading", ""),
+        )
+        return best_chunk, "title_fuzzy"
+
+    # 2) Embedding fallback on titles only
+    if (
+        rule_embedding is None
+        or head_embeddings is None
+        or head_embeddings.size == 0
+        or not headed_chunks
+    ):
+        return None, ""
+
+    rule_norm = rule_embedding / (np.linalg.norm(rule_embedding) + 1e-10)
+    scores = head_embeddings @ rule_norm
+    best_idx = int(np.argmax(scores))
+    best_score = float(scores[best_idx])
+
+    if best_score >= TITLE_EMBEDDING_THRESHOLD:
+        chunk = headed_chunks[best_idx]
+        logger.info(
+            "Title match (embedding %.2f): rule '%s' -> clause '%s'",
+            best_score, rule.title,
+            chunk.metadata.get("section_heading", ""),
+        )
+        return chunk, "title_embedding"
+
+    return None, ""
+
+
+async def playbook_review_service(
+    document: Document,
+    request: RuleCheckRequest,
+    session_data: SessionData,
+) -> PlayBookReviewFinalResponse:
+    """Review a docx against a list of rules using clause-title matching."""
     service_container = get_service_container()
     registry = service_container.ingestion_service.registry
     parser = registry.get_parser()
+    embedding_service = service_container.embedding_service
 
+    # Step 1: parse document into clauses (each chunk has metadata.section_heading)
     parse_result = await parser.parse_document(document, session_data)
-
     if not parse_result.success or not parse_result.chunks:
-        logger.error(f"Failed to parse document: {parse_result.error_message}")
+        logger.error("Failed to parse document: %s", parse_result.error_message)
         return PlayBookReviewFinalResponse(rules_review=[], missing_clauses=None)
 
-    # Store chunks in session
     for chunk in parse_result.chunks:
         session_data.chunk_store[chunk.chunk_index] = chunk
 
-    # Get document title from metadata
-    document_title = parse_result.metadata.get("section_heading", "Unknown Document")
-    logger.info(f"Parsed document '{document_title}' with {len(parse_result.chunks)} chunks")
+    logger.info(
+        "Parsed document with %d clause chunks", len(parse_result.chunks),
+    )
 
-    # Step 2: Review each rule against the parsed document
-    rules_review = []
+    # Step 2: precompute embeddings once per request (cheap parallel batch).
+    headed_chunks = [
+        c for c in parse_result.chunks
+        if c.metadata and c.metadata.get("section_heading")
+    ]
+    head_embeddings: Optional[np.ndarray] = None
+    if headed_chunks:
+        head_embs_raw = await asyncio.gather(
+            *[
+                embedding_service.generate_embeddings(c.metadata["section_heading"])
+                for c in headed_chunks
+            ]
+        )
+        head_matrix = np.array(head_embs_raw)
+        head_embeddings = head_matrix / (
+            np.linalg.norm(head_matrix, axis=1, keepdims=True) + 1e-10
+        )
 
-    for rule in request.rulesinformation:
-        logger.info(f"Checking rule: {rule.title}")
+    rule_embeddings_raw = await asyncio.gather(
+        *[embedding_service.generate_embeddings(r.title) for r in request.rulesinformation]
+    )
 
-        normalized_rule = normalize(rule.title)
+    # Step 3: per-rule match + LLM evaluation
+    rules_review: List[PlayBookReviewResponse] = []
 
-        # Find the clause that matches the rule title from the parsed chunks
-        matching_chunk = None
-        for chunk in parse_result.chunks:
-            section_heading = chunk.metadata.get("section_heading", "")
-            if normalize(section_heading) == normalized_rule:
-                matching_chunk = chunk
-                break
+    for rule, rule_emb in zip(request.rulesinformation, rule_embeddings_raw):
+        rule_emb_arr = np.array(rule_emb)
+
+        matching_chunk, strategy = await _find_matching_chunk(
+            rule=rule,
+            chunks=parse_result.chunks,
+            rule_embedding=rule_emb_arr,
+            head_embeddings=head_embeddings,
+            headed_chunks=headed_chunks,
+        )
 
         if not matching_chunk:
-            logger.warning(f"No chunk found matching rule title: {rule.title}")
-            # Return a response indicating the rule was not found
-            llm_response = PlayBookReviewLLMResponse(para_identifiers=[], status="Not Found", reason=f"No clause found with title '{rule.title}'", suggestion="", suggested_fix="")
+            logger.warning(
+                "No clause matched rule '%s' (fuzzy < %.2f, embedding < %.2f).",
+                rule.title, FUZZY_TITLE_THRESHOLD, TITLE_EMBEDDING_THRESHOLD,
+            )
+            llm_response = PlayBookReviewLLMResponse(
+                para_identifiers=[],
+                status="Not Found",
+                reason=(
+                    f"No clause in the document was a close enough title match "
+                    f"for rule '{rule.title}'."
+                ),
+                suggestion="",
+                suggested_fix="",
+            )
         else:
-            # Step 3: Send the chunk content with rule description and instruction to LLM for validation
-            llm_response = await validate_clause_against_rule(clause_content=matching_chunk.content, rule_title=rule.title, rule_description=rule.description, rule_instruction=rule.instruction)
+            llm_response = await validate_clause_against_rule(
+                clause_content=matching_chunk.content,
+                clause_heading=matching_chunk.metadata.get("section_heading", ""),
+                rule_title=rule.title,
+                rule_description=rule.description,
+                rule_instruction=rule.instruction,
+            )
 
-        # Step 4: Format the response according to the schema
-        rule_response = PlayBookReviewResponse(rule_title=rule.title, rule_instruction=rule.instruction, rule_description=rule.description, content=llm_response)
-        rules_review.append(rule_response)
+        rules_review.append(
+            PlayBookReviewResponse(
+                rule_title=rule.title,
+                rule_instruction=rule.instruction,
+                rule_description=rule.description,
+                content=llm_response,
+            )
+        )
 
-    return PlayBookReviewFinalResponse(rules_review=rules_review, missing_clauses=None)  # Could be implemented later if needed
+    return PlayBookReviewFinalResponse(rules_review=rules_review, missing_clauses=None)
 
 
-async def validate_clause_against_rule(clause_content: str, rule_title: str, rule_description: str, rule_instruction: str) -> PlayBookReviewLLMResponse:
-    """Validate a clause against a rule using LLM."""
-
+async def validate_clause_against_rule(
+    clause_content: str,
+    clause_heading: str,
+    rule_title: str,
+    rule_description: str,
+    rule_instruction: str,
+) -> PlayBookReviewLLMResponse:
+    """Send the matched clause + rule to the LLM for compliance evaluation."""
     container = get_service_container()
     llm_model = container.azure_openai_model
 
-    # Use the same prompt as the old playbook review
-    from pathlib import Path
+    prompt = Path(
+        r"src\services\prompts\v1\ai_review_prompt_v2.mustache"
+    ).read_text(encoding="utf-8")
 
-    prompt = Path(r"src\services\prompts\v1\ai_review_prompt_v2.mustache").read_text(encoding="utf-8")
+    para_id = clause_heading.strip() or "matched_clause"
+    paragraphs_block = f"PARA_ID: {para_id}\nTEXT: {clause_content}"
 
-    context = {"rule_title": rule_title, "rule_instruction": rule_instruction, "rule_description": rule_description, "paragraphs": f"PARA_ID: clause_content\nTEXT: {clause_content}"}
+    context = {
+        "rule_title": rule_title,
+        "rule_instruction": rule_instruction,
+        "rule_description": rule_description,
+        "paragraphs": paragraphs_block,
+    }
 
     try:
-        response = await llm_model.generate(prompt=prompt, context=context, response_model=PlayBookReviewLLMResponse)
+        response = await llm_model.generate(
+            prompt=prompt,
+            context=context,
+            response_model=PlayBookReviewLLMResponse,
+        )
         return response
-    except Exception as e:
-        logger.error(f"LLM validation failed: {str(e)}")
-        return PlayBookReviewLLMResponse(para_identifiers=["clause_content"], status="Error", reason=f"LLM validation failed: {str(e)}", suggestion="", suggested_fix="")
+    except Exception as exc:
+        logger.exception("LLM validation failed for rule '%s'.", rule_title)
+        return PlayBookReviewLLMResponse(
+            para_identifiers=[para_id],
+            status="Error",
+            reason=f"LLM validation failed: {exc}",
+            suggestion="",
+            suggested_fix="",
+        )

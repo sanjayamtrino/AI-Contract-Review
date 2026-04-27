@@ -7,13 +7,61 @@ CRITICAL RULES:
 2. Return ONLY a valid JSON object. No markdown fences. No explanation. Nothing before or after.
 3. The JSON must follow this exact schema:
    {{"clauses": [{{"title": "...", "content": "..."}}]}}
-4. title: exact heading text, stripped of leading numbers and punctuation.
-   For untitled sections use an inferred label in square brackets e.g. [Preamble].
+4. title: the EXACT clause heading from the document, with ONLY the leading enumerator
+   stripped. The substantive heading words MUST be copied verbatim — do NOT paraphrase,
+   expand, abbreviate, translate, or reorder. The goal is a downstream exact-equality
+   match against rule titles, so consistency and verbatim accuracy are mandatory.
+
+   STRIP these leading prefixes (and the whitespace/punctuation that follows them):
+     • Numbered prefixes:       "1.", "1.2", "1.2.3", "12.", "1)", "(1)", "I.", "II."
+     • Lettered prefixes:       "(a)", "(b)", "a.", "b)", "(A)", "B."
+     • Roman numeral prefixes:  "(i)", "(ii)", "(iv)", "i.", "iv)"
+     • Marker words:            "Section 4 — ", "Section IV.", "Article 3.", "ARTICLE V — ",
+                                "Clause 7." (strip the "Section/Article/Clause N -" prefix
+                                ONLY; keep the heading text that follows)
+     • Trailing punctuation:    a single trailing period, colon, dash, or hyphen
+
+   PRESERVE these as part of the title:
+     • Multi-word titles in their original word order   ("Term and Survival of Obligations")
+     • Defined-term casing                              ("Confidential Information")
+     • Conjunctions/prepositions that are part of the title ("and", "of", "to")
+     • Hyphenated or slash-separated phrasing           ("Non-Disclosure", "Term/Termination")
+
+   DO NOT:
+     • Add words the document does not contain
+     • Drop words that are part of the heading
+     • Standardise wording across the document
+     • Combine two adjacent headings into one title
+     • Output title text that contains body sentences (a title is a heading, not prose)
+
+   EXAMPLES (input heading → output title):
+     "1. Confidential Information."           →  "Confidential Information"
+     "1.2 Term and Termination"               →  "Term and Termination"
+     "Section 4 — Limitation of Liability."   →  "Limitation of Liability"
+     "(i) Permitted Disclosures."             →  "Permitted Disclosures"
+     "ARTICLE III - Governing Law"            →  "Governing Law"
+     "Audit Rights. Each party may..."        →  "Audit Rights"
+     "MUTUAL NON-DISCLOSURE AGREEMENT"        →  "Mutual Non-Disclosure Agreement"
+                                                  (preserve the wording; convert ALL CAPS
+                                                  to title case ONLY when the entire heading
+                                                  is in caps and converting it makes the
+                                                  match more robust)
+
+   For untitled sections (e.g. an unnamed preamble or signature block) use an inferred
+   label in square brackets, e.g. [Preamble], [Recitals], [Signatures]. Square-bracket
+   labels signal to downstream code that the title was not literally present in the
+   document.
+
 5. content: COMPLETE verbatim text of the clause — every sub-paragraph, list item, and continuation paragraph that belongs to it. Do NOT truncate.
 6. Never merge two separate clauses. Never split one logical clause.
-7. After drafting, self-audit: count every heading in the document and confirm your output has a matching entry.
+7. After drafting, self-audit twice:
+   a. Count every heading in the document and confirm your output has a matching entry.
+   b. For every output title, re-read the source heading. Confirm the title is the EXACT
+      substantive heading text with only the enumerator stripped — no paraphrase, no
+      added or dropped words, no body text leaked in. Fix any title that fails this
+      check before returning.
 
 DOCUMENT TEXT:
 {{text}}
 
-Remember: output ONLY the JSON object. Extract EVERY clause to the very end of the document.
+Remember: output ONLY the JSON object. Extract EVERY clause to the very end of the document. Titles must be verbatim heading text (minus enumerator) so that downstream rule-title equality checks succeed.

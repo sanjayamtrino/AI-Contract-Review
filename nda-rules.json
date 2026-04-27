@@ -1,0 +1,54 @@
+{
+  "rulesinformation": [
+    {
+      "title": "Definition and Scope of Confidential Information",
+      "instruction": "Ensure the definition is clear, appropriately broad, and includes/excludes the right categories (e.g., oral, written, third-party info).",
+      "description": "Confidential Information shall mean all non-public, proprietary, or confidential information disclosed by the Disclosing Party to the Receiving Party, whether in written, oral, visual, electronic, or other form, including but not limited to trade secrets, technical data, business plans, financial records, customer lists, proprietary software code, technical specifications, inventions, formulas, designs, prototypes, marketing strategies, and any other information designated as confidential or that reasonably should be understood to be confidential given the nature of the information and circumstances of disclosure. Information need not be marked or labeled as confidential to be treated as Confidential Information under this Agreement."
+    },
+    {
+      "title": "Exclusions from Confidential Information",
+      "instruction": "Confirm standard exclusions are present (public domain, prior knowledge, independent development, third-party sources).",
+      "description": "Confidential Information shall not include information that: (a) is or becomes publicly available or part of the public domain through no fault, act, or omission of the Receiving Party; (b) was already known to or in the possession of the Receiving Party prior to disclosure by the Disclosing Party, as demonstrated by written records; (c) is independently developed by the Receiving Party without reference to or use of the Disclosing Party's Confidential Information; (d) is lawfully received from a third party who is not under any obligation of confidentiality with respect to such information; or (e) is required to be disclosed by law, regulation, or court order, provided that the Receiving Party gives prompt written notice to the Disclosing Party prior to such disclosure. The burden of proving an exclusion shall rest with the party claiming it."
+    },
+    {
+      "title": "Obligations of Receiving Party",
+      "instruction": "Review restrictions on use, disclosure, reproduction, and reverse engineering; confirm obligations are reasonable and industry-standard.",
+      "description": "The Receiving Party agrees to hold all Confidential Information in strict confidence and to take reasonable measures to protect the secrecy of and avoid disclosure and unauthorized use of the Confidential Information. The Receiving Party shall not disclose Confidential Information to any third party without the prior written consent of the Disclosing Party. The Receiving Party shall use the Confidential Information solely for the Purpose set forth in this Agreement. Access to Confidential Information shall be limited to the Receiving Party's employees, directors, officers, consultants, and advisors who have a need to know and who are bound by written confidentiality obligations no less restrictive than those contained herein. The Receiving Party shall not reverse engineer, decompile, or disassemble any Confidential Information, nor reproduce or copy it except as reasonably necessary for the permitted Purpose."
+    },
+    {
+      "title": "Permitted Disclosures and Notice Requirements",
+      "instruction": "Check exceptions for legal/governmental orders, and adequacy of notice provisions for compelled disclosure.",
+      "description": "The Receiving Party may disclose Confidential Information to the extent required by applicable law, regulation, legal process, court order, subpoena, governmental investigation, or regulatory authority, provided that the Receiving Party shall give the Disclosing Party prompt written notice prior to such disclosure, to the extent legally permitted, to allow the Disclosing Party to seek a protective order, injunction, or other appropriate remedy. The Receiving Party shall limit such compelled disclosure to the minimum information legally required and shall cooperate with the Disclosing Party's efforts to obtain confidential treatment for the disclosed information. The Receiving Party may also disclose Confidential Information to its legal counsel and professional advisors who are bound by professional duties of confidentiality."
+    },
+    {
+      "title": "Return or Destruction of Information",
+      "instruction": "Assess procedures for return or destruction of confidential materials upon request or termination.",
+      "description": "Upon the termination or expiration of this Agreement, or upon the written request of the Disclosing Party, the Receiving Party shall promptly return to the Disclosing Party or permanently destroy all originals, copies, reproductions, summaries, analyses, notes, extracts, and other materials containing or derived from Confidential Information, in any form or medium, whether physical or electronic. The Receiving Party shall provide written certification of such return or destruction within thirty (30) days of the request or termination. Notwithstanding the foregoing, the Receiving Party may retain copies of Confidential Information stored in automated backup or archival systems, or as required by applicable law or regulation, provided that such retained copies remain subject to the confidentiality obligations of this Agreement."
+    },
+    {
+      "title": "Term and Survival of Obligations",
+      "instruction": "Verify the NDA's duration (three years from first disclosure) and that confidentiality survives termination for information disclosed prior.",
+      "description": "This Agreement shall remain in effect for a period of 3 years from the Effective Date, unless earlier terminated by either party upon 30 days prior written notice. The obligations of confidentiality set forth herein shall survive the termination or expiration of this Agreement for a period of 3 years from the date of disclosure of the Confidential Information, or, with respect to trade secrets, for so long as such information qualifies as a trade secret under applicable law. All rights and obligations that have accrued prior to termination shall survive, including the duty to protect Confidential Information disclosed during the term."
+    },
+    {
+      "title": "Remedies and Limitation of Liability",
+      "instruction": "Evaluate the availability of injunctive relief and any disclaimers of liability or damages.",
+      "description": "Each party acknowledges that any unauthorized disclosure or use of Confidential Information may cause irreparable harm to the Disclosing Party, the extent of which may be difficult to ascertain, and that monetary damages alone may not be a sufficient remedy. Accordingly, the Disclosing Party shall be entitled to seek injunctive relief, specific performance, or other equitable remedies in any court of competent jurisdiction, in addition to any other rights and remedies available at law or in equity, without the necessity of proving actual damages or posting a bond. Nothing in this Agreement shall limit or exclude either party's liability for fraud, willful misconduct, or gross negligence. All Confidential Information is provided \"as is\" without warranty of any kind. Neither the Disclosing Party nor its representatives shall be liable for any damages arising from the Receiving Party's use or inability to use the Confidential Information."
+    },
+    {
+      "title": "Assignment and Change of Control",
+      "instruction": "Confirm assignment restrictions are clear and reasonable; flag any issues with mergers, acquisitions, or reorganizations.",
+      "description": "Neither party may assign, delegate, or otherwise transfer this Agreement or any of its rights or obligations hereunder, in whole or in part, without the prior written consent of the other party. Any attempted assignment, delegation, or transfer in violation of this provision shall be null and void. This Agreement shall be binding upon and inure to the benefit of the parties and their respective successors and permitted assigns. In the event of a merger, acquisition, corporate reorganization, change of control, or sale of all or substantially all of the assets of a party, the confidentiality obligations under this Agreement shall remain in full force and effect and shall be binding upon the successor entity."
+    },
+    {
+      "title": "Governing Law and Jurisdiction",
+      "instruction": "Ensure the choice of law (U.S., specifically San Francisco County, CA) and venue provisions are acceptable for your party.",
+      "description": "This Agreement shall be governed by and construed in accordance with the laws of the State of California, without giving effect to any choice of law or conflict of laws provisions. Each party hereby consents to the exclusive jurisdiction and venue of the federal and state courts located in San Francisco County, California for the resolution of any disputes arising under or in connection with this Agreement. Each party irrevocably waives any objection to such jurisdiction and venue, including objections based on inconvenient forum. Process may be served on either party in the manner specified in the notice provisions of this Agreement."
+    },
+    {
+      "title": "Miscellaneous Provisions",
+      "instruction": "Review integration, amendment, waiver, notice, and attorney's fees clauses for completeness and fairness.",
+      "description": "This Agreement constitutes the entire agreement between the parties with respect to the subject matter hereof and supersedes all prior and contemporaneous agreements, negotiations, representations, and understandings, whether written or oral. This Agreement may not be amended or modified except by a written instrument signed by both parties. No failure or delay by either party in exercising any right or remedy shall constitute a waiver thereof, and any waiver must be in writing and signed by the waiving party. If any provision of this Agreement is held to be invalid or unenforceable, the remaining provisions shall continue in full force and effect (severability). All notices required or permitted under this Agreement shall be in writing and delivered by personal delivery, overnight courier, certified mail, or email to the addresses specified herein. In the event of any dispute, the prevailing party shall be entitled to recover its reasonable attorneys' fees and costs."
+    }
+  ]
+}
