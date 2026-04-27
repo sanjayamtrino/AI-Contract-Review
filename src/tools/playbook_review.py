@@ -1,368 +1,368 @@
-import asyncio
-import hashlib
-import re
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+# import asyncio
+# import hashlib
+# import re
+# from pathlib import Path
+# from typing import Dict, List, Optional, Tuple
 
-import numpy as np
-from cachetools import LRUCache
+# import numpy as np
+# from cachetools import LRUCache
 
-from src.config.logging import get_logger
-from src.dependencies import get_service_container
-from src.schemas.playbook_review import (
-    MissingClausesLLMResponse,
-    PlayBookReviewFinalResponse,
-    PlayBookReviewLLMResponse,
-    PlayBookReviewResponse,
-    RuleCheckRequest,
-    RuleInfo,
-    RuleResult,
-    TextInfo,
-)
+# from src.config.logging import get_logger
+# from src.dependencies import get_service_container
+# from src.schemas.playbook_review import (
+#     MissingClausesLLMResponse,
+#     PlayBookReviewFinalResponse,
+#     PlayBookReviewLLMResponse,
+#     PlayBookReviewResponse,
+#     RuleCheckRequest,
+#     RuleInfo,
+#     RuleResult,
+#     TextInfo,
+# )
 
-logger = get_logger(__name__)
+# logger = get_logger(__name__)
 
-# ==============================
-# Configuration
-# ==============================
+# # ==============================
+# # Configuration
+# # ==============================
 
-AGENT_NAME = "playbook_review_agent"
+# AGENT_NAME = "playbook_review_agent"
 
-# FIX 1: Lowered threshold from 0.5 → 0.25
-# Previous value was silently dropping relevant paragraphs before the LLM ever saw them.
-SIMILARITY_THRESHOLD = 0.25
+# # FIX 1: Lowered threshold from 0.5 → 0.25
+# # Previous value was silently dropping relevant paragraphs before the LLM ever saw them.
+# SIMILARITY_THRESHOLD = 0.25
 
-# FIX 2: Increased TOP_K from 5 → 15
-# With 33 paragraphs, TOP_K=5 was cutting off multi-paragraph clauses
-# (e.g. Compensation spans P0004, P0005, P0025, P0026, P0027 — all 5 could be missed).
-TOP_K = 15
+# # FIX 2: Increased TOP_K from 5 → 15
+# # With 33 paragraphs, TOP_K=5 was cutting off multi-paragraph clauses
+# # (e.g. Compensation spans P0004, P0005, P0025, P0026, P0027 — all 5 could be missed).
+# TOP_K = 15
 
-# FIX 3: Small-doc threshold — if the document has fewer paragraphs than this,
-# skip embedding filtering entirely and pass all paragraphs to the LLM.
-# This prevents the retrieval layer from gatekeeping on small contracts.
-SMALL_DOC_THRESHOLD = 50
+# # FIX 3: Small-doc threshold — if the document has fewer paragraphs than this,
+# # skip embedding filtering entirely and pass all paragraphs to the LLM.
+# # This prevents the retrieval layer from gatekeeping on small contracts.
+# SMALL_DOC_THRESHOLD = 50
 
-EMBEDDING_CACHE_SIZE = 10_000
+# EMBEDDING_CACHE_SIZE = 10_000
 
-SIMILARITY_PROMPT = Path(r"src\services\prompts\v1\ai_review_prompt_v2.mustache").read_text(encoding="utf-8")
+# SIMILARITY_PROMPT = Path(r"src\services\prompts\v1\ai_review_prompt_v2.mustache").read_text(encoding="utf-8")
 
-MISSING_CLAUSES_PROMPT = Path(r"src\services\prompts\v1\missing_clauses.mustache").read_text(encoding="utf-8")
+# MISSING_CLAUSES_PROMPT = Path(r"src\services\prompts\v1\missing_clauses.mustache").read_text(encoding="utf-8")
 
-# ==============================
-# Embedding Cache (LRU + Safe)
-# ==============================
+# # ==============================
+# # Embedding Cache (LRU + Safe)
+# # ==============================
 
-_embedding_cache: LRUCache = LRUCache(maxsize=EMBEDDING_CACHE_SIZE)
-_embedding_locks: Dict[str, asyncio.Lock] = {}
-_embedding_locks_guard = asyncio.Lock()
+# _embedding_cache: LRUCache = LRUCache(maxsize=EMBEDDING_CACHE_SIZE)
+# _embedding_locks: Dict[str, asyncio.Lock] = {}
+# _embedding_locks_guard = asyncio.Lock()
 
 
-def _hash(text: str) -> str:
-    return hashlib.md5(text.encode("utf-8")).hexdigest()
+# def _hash(text: str) -> str:
+#     return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 
-async def _get_lock_for_key(key: str) -> asyncio.Lock:
-    async with _embedding_locks_guard:
-        if key not in _embedding_locks:
-            _embedding_locks[key] = asyncio.Lock()
-        return _embedding_locks[key]
+# async def _get_lock_for_key(key: str) -> asyncio.Lock:
+#     async with _embedding_locks_guard:
+#         if key not in _embedding_locks:
+#             _embedding_locks[key] = asyncio.Lock()
+#         return _embedding_locks[key]
 
 
-async def get_embedding(embedding_model, text: str) -> np.ndarray:
-    key = _hash(text)
+# async def get_embedding(embedding_model, text: str) -> np.ndarray:
+#     key = _hash(text)
 
-    if key in _embedding_cache:
-        return _embedding_cache[key]
+#     if key in _embedding_cache:
+#         return _embedding_cache[key]
 
-    lock = await _get_lock_for_key(key)
+#     lock = await _get_lock_for_key(key)
 
-    async with lock:
-        if key not in _embedding_cache:
-            embedding = await embedding_model.generate_embeddings(text)
-            _embedding_cache[key] = embedding
-        return _embedding_cache[key]
+#     async with lock:
+#         if key not in _embedding_cache:
+#             embedding = await embedding_model.generate_embeddings(text)
+#             _embedding_cache[key] = embedding
+#         return _embedding_cache[key]
 
 
-# ==============================
-# Text Processing
-# ==============================
+# # ==============================
+# # Text Processing
+# # ==============================
 
-TOKEN_PATTERN = re.compile(r"\b[a-zA-Z]{3,}\b")
+# TOKEN_PATTERN = re.compile(r"\b[a-zA-Z]{3,}\b")
 
 
-def tokenize(text: str) -> set:
-    return set(TOKEN_PATTERN.findall(text.lower()))
+# def tokenize(text: str) -> set:
+#     return set(TOKEN_PATTERN.findall(text.lower()))
 
 
-def keyword_score(rule_text: str, para_text: str) -> float:
-    rule_tokens = tokenize(rule_text)
-    if not rule_tokens:
-        return 0.0
-    para_tokens = tokenize(para_text)
-    return len(rule_tokens & para_tokens) / len(rule_tokens)
-
-
-def hybrid_score(cosine: float, keyword: float) -> float:
-    return 0.75 * cosine + 0.25 * keyword
-
-
-def normalize_embeddings(matrix: np.ndarray) -> np.ndarray:
-    norms = np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-10
-    return matrix / norms
-
-
-# ==============================
-# Missing Clauses
-# ==============================
-
-
-def _build_reviewed_rules_summary(reviewed: Dict[str, PlayBookReviewResponse]) -> str:
-    lines = []
-    for title, review in reviewed.items():
-        para_ids = ", ".join(review.content.para_identifiers) or "none"
-        lines.append(f"RULE: {title} | STATUS: {review.content.status} | PARAS: {para_ids}")
-    return "\n".join(lines) if lines else "None"
-
-
-async def get_missing_clauses(
-    llm_model,
-    full_text: str,
-    reviewed_rules_summary: str,
-) -> MissingClausesLLMResponse:
-
-    try:
-        response = await llm_model.generate(
-            prompt=MISSING_CLAUSES_PROMPT,
-            context={
-                "data": full_text,
-                "reviewed_rules_summary": reviewed_rules_summary,
-            },
-            response_model=MissingClausesLLMResponse,
-        )
-        logger.info("Missing clauses identified: %d", len(response.missing_clauses))
-        return response
-
-    except Exception as exc:
-        logger.exception("Missing clauses evaluation failed.")
-        return MissingClausesLLMResponse(
-            missing_clauses=[],
-            total_missing=0,
-            summary=f"LLM error: {exc}",
-        )
-
-
-# ==============================
-# Rule Processing
-# ==============================
-
-
-def _select_paragraphs_for_rule(
-    rule_text: str,
-    rule_norm: np.ndarray,
-    normalized_para_embeddings: np.ndarray,
-    request: RuleCheckRequest,
-) -> List[Tuple[TextInfo, float]]:
-    """
-    FIX 4: Unified paragraph selection strategy.
-
-    For small documents (≤ SMALL_DOC_THRESHOLD paragraphs):
-        → Skip embedding filtering entirely. Pass ALL paragraphs to LLM.
-          The LLM is perfectly capable of reading 30–50 short paragraphs and
-          deciding relevance itself. The embedding layer was the one making mistakes.
-
-    For large documents:
-        → Use TOP_K + hybrid score + SIMILARITY_THRESHOLD as before,
-          BUT fall back to top-5 by cosine if nothing clears the threshold.
-          This prevents the "empty context" bug where the LLM was forced
-          to say "Not Found" because it received zero paragraphs.
-    """
-    num_paras = len(request.textinformation)
-
-    # Small doc: pass everything to the LLM
-    if num_paras <= SMALL_DOC_THRESHOLD:
-        cosine_scores = normalized_para_embeddings @ rule_norm
-        result = []
-        for idx, para in enumerate(request.textinformation):
-            kw = keyword_score(rule_text, para.text)
-            score = hybrid_score(float(cosine_scores[idx]), kw)
-            result.append((para, score))
-        # Sort by score descending so LLM context is ordered by relevance
-        result.sort(key=lambda x: x[1], reverse=True)
-        return result
-
-    # Large doc: use embedding filtering
-    cosine_scores = normalized_para_embeddings @ rule_norm
-    top_indices = np.argsort(cosine_scores)[::-1][:TOP_K]
-
-    matched: List[Tuple[TextInfo, float]] = []
-    for idx in top_indices:
-        para = request.textinformation[idx]
-        kw = keyword_score(rule_text, para.text)
-        score = hybrid_score(float(cosine_scores[idx]), kw)
-        if score >= SIMILARITY_THRESHOLD:
-            matched.append((para, score))
-
-    # FIX 5: Fallback — never send empty context to the LLM.
-    # If nothing clears the threshold, send the top-5 by cosine anyway
-    # so the LLM can make the final call instead of defaulting to "Not Found".
-    if not matched:
-        logger.warning(
-            "No paragraphs cleared threshold %.2f for rule. Falling back to top-5 by cosine.",
-            SIMILARITY_THRESHOLD,
-        )
-        fallback_indices = np.argsort(cosine_scores)[::-1][:5]
-        for idx in fallback_indices:
-            para = request.textinformation[idx]
-            kw = keyword_score(rule_text, para.text)
-            score = hybrid_score(float(cosine_scores[idx]), kw)
-            matched.append((para, score))
-
-    return matched
-
-
-async def _process_rule(
-    rule: RuleInfo,
-    normalized_para_embeddings: np.ndarray,
-    request: RuleCheckRequest,
-    embedding_model,
-    llm_model,
-) -> Tuple[str, PlayBookReviewResponse]:
-
-    rule_text = f"TITLE: {rule.title}\n" f"INSTRUCTION: {rule.instruction}\n" f"DESCRIPTION: {rule.description}\n"
-
-    rule_emb = await get_embedding(embedding_model, rule_text)
-    rule_norm = rule_emb / (np.linalg.norm(rule_emb) + 1e-10)
-
-    # FIX 4+5 applied here
-    matched = _select_paragraphs_for_rule(rule_text, rule_norm, normalized_para_embeddings, request)
-
-    result = RuleResult(
-        title=rule.title,
-        instruction=rule.instruction,
-        description=rule.description,
-        paragraphidentifier=",".join(p.paraindetifier for p, _ in matched),
-        paragraphcontext="\n\n".join(f"PARA_ID: {p.paraindetifier}\nTEXT: {p.text.strip()}" for p, _ in matched),
-        similarity_scores=[score for _, score in matched],
-    )
-
-    try:
-        llm_response: PlayBookReviewLLMResponse = await llm_model.generate(
-            prompt=SIMILARITY_PROMPT,
-            context={
-                "rule_title": result.title,
-                "rule_instruction": result.instruction,
-                "rule_description": result.description,
-                "paragraphs": result.paragraphcontext,
-            },
-            response_model=PlayBookReviewLLMResponse,
-        )
-
-    except Exception as exc:
-        logger.exception("LLM rule evaluation failed.")
-        llm_response = PlayBookReviewLLMResponse(
-            para_identifiers=[],
-            status="Error",
-            reason=str(exc),
-            suggestion="",
-            suggested_fix="",
-        )
-
-    return rule.title, PlayBookReviewResponse(
-        rule_title=rule.title,
-        rule_instruction=rule.instruction,
-        rule_description=rule.description,
-        content=llm_response,
-    )
-
-
-# ==============================
-# Main Entry
-# ==============================
-
-
-async def review_document(
-    session_id: str,
-    request: RuleCheckRequest,
-    force_update_rules: Optional[List[str]] = None,
-) -> PlayBookReviewFinalResponse:
-
-    force_update_rules = force_update_rules or []
-
-    container = get_service_container()
-    embedding_model = container.embedding_service
-    llm_model = container.azure_openai_model
-
-    session_data = container.session_manager.get_session(session_id)
-    if not session_data:
-        return PlayBookReviewFinalResponse(
-            rules_review=[],
-            missing_clauses=None,
-        )
-
-    agent_cache = session_data.tool_results.get(AGENT_NAME, {})
-    cached_reviews: Dict[str, PlayBookReviewResponse] = {r.rule_title: r for r in agent_cache.get("rules_review", [])}
-
-    # Determine stale rules
-    rules_to_update = []
-    for rule in request.rulesinformation:
-        cached = cached_reviews.get(rule.title)
-        if not cached or rule.title in force_update_rules or cached.rule_description != rule.description or cached.rule_instruction != rule.instruction:
-            rules_to_update.append(rule)
-
-    # If nothing changed, return cache
-    if not rules_to_update:
-        return PlayBookReviewFinalResponse(
-            rules_review=list(cached_reviews.values()),
-            missing_clauses=agent_cache.get("missing_clauses"),
-        )
-
-    # Precompute normalized paragraph embeddings once
-    para_embeddings = np.array(await asyncio.gather(*[get_embedding(embedding_model, p.text) for p in request.textinformation]))
-    normalized_para_embeddings = normalize_embeddings(para_embeddings)
-
-    # Process rules concurrently
-    updates = await asyncio.gather(
-        *[
-            _process_rule(
-                rule,
-                normalized_para_embeddings,
-                request,
-                embedding_model,
-                llm_model,
-            )
-            for rule in rules_to_update
-        ]
-    )
-
-    cached_reviews.update(dict(updates))
-
-    # Recompute missing clauses if doc OR rules changed
-    full_text = "\n\n".join(f"PARA_ID: {p.paraindetifier}\nTEXT: {p.text}" for p in request.textinformation)
-
-    doc_hash = _hash(full_text)
-    rules_hash = _hash("".join(r.title + r.description for r in request.rulesinformation))
-
-    cached_doc_hash = agent_cache.get("doc_hash")
-    cached_rules_hash = agent_cache.get("rules_hash")
-
-    if doc_hash != cached_doc_hash or rules_hash != cached_rules_hash:
-        logger.info("Re-evaluating missing clauses.")
-        reviewed_summary = _build_reviewed_rules_summary(cached_reviews)
-        missing_clauses = await get_missing_clauses(llm_model, full_text, reviewed_summary)
-    else:
-        missing_clauses = agent_cache.get("missing_clauses")
-
-    session_data.tool_results[AGENT_NAME] = {
-        "rules_review": list(cached_reviews.values()),
-        "missing_clauses": missing_clauses,
-        "doc_hash": doc_hash,
-        "rules_hash": rules_hash,
-    }
-
-    return PlayBookReviewFinalResponse(
-        rules_review=list(cached_reviews.values()),
-        missing_clauses=missing_clauses,
-    )
+# def keyword_score(rule_text: str, para_text: str) -> float:
+#     rule_tokens = tokenize(rule_text)
+#     if not rule_tokens:
+#         return 0.0
+#     para_tokens = tokenize(para_text)
+#     return len(rule_tokens & para_tokens) / len(rule_tokens)
+
+
+# def hybrid_score(cosine: float, keyword: float) -> float:
+#     return 0.75 * cosine + 0.25 * keyword
+
+
+# def normalize_embeddings(matrix: np.ndarray) -> np.ndarray:
+#     norms = np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-10
+#     return matrix / norms
+
+
+# # ==============================
+# # Missing Clauses
+# # ==============================
+
+
+# def _build_reviewed_rules_summary(reviewed: Dict[str, PlayBookReviewResponse]) -> str:
+#     lines = []
+#     for title, review in reviewed.items():
+#         para_ids = ", ".join(review.content.para_identifiers) or "none"
+#         lines.append(f"RULE: {title} | STATUS: {review.content.status} | PARAS: {para_ids}")
+#     return "\n".join(lines) if lines else "None"
+
+
+# async def get_missing_clauses(
+#     llm_model,
+#     full_text: str,
+#     reviewed_rules_summary: str,
+# ) -> MissingClausesLLMResponse:
+
+#     try:
+#         response = await llm_model.generate(
+#             prompt=MISSING_CLAUSES_PROMPT,
+#             context={
+#                 "data": full_text,
+#                 "reviewed_rules_summary": reviewed_rules_summary,
+#             },
+#             response_model=MissingClausesLLMResponse,
+#         )
+#         logger.info("Missing clauses identified: %d", len(response.missing_clauses))
+#         return response
+
+#     except Exception as exc:
+#         logger.exception("Missing clauses evaluation failed.")
+#         return MissingClausesLLMResponse(
+#             missing_clauses=[],
+#             total_missing=0,
+#             summary=f"LLM error: {exc}",
+#         )
+
+
+# # ==============================
+# # Rule Processing
+# # ==============================
+
+
+# def _select_paragraphs_for_rule(
+#     rule_text: str,
+#     rule_norm: np.ndarray,
+#     normalized_para_embeddings: np.ndarray,
+#     request: RuleCheckRequest,
+# ) -> List[Tuple[TextInfo, float]]:
+#     """
+#     FIX 4: Unified paragraph selection strategy.
+
+#     For small documents (≤ SMALL_DOC_THRESHOLD paragraphs):
+#         → Skip embedding filtering entirely. Pass ALL paragraphs to LLM.
+#           The LLM is perfectly capable of reading 30–50 short paragraphs and
+#           deciding relevance itself. The embedding layer was the one making mistakes.
+
+#     For large documents:
+#         → Use TOP_K + hybrid score + SIMILARITY_THRESHOLD as before,
+#           BUT fall back to top-5 by cosine if nothing clears the threshold.
+#           This prevents the "empty context" bug where the LLM was forced
+#           to say "Not Found" because it received zero paragraphs.
+#     """
+#     num_paras = len(request.textinformation)
+
+#     # Small doc: pass everything to the LLM
+#     if num_paras <= SMALL_DOC_THRESHOLD:
+#         cosine_scores = normalized_para_embeddings @ rule_norm
+#         result = []
+#         for idx, para in enumerate(request.textinformation):
+#             kw = keyword_score(rule_text, para.text)
+#             score = hybrid_score(float(cosine_scores[idx]), kw)
+#             result.append((para, score))
+#         # Sort by score descending so LLM context is ordered by relevance
+#         result.sort(key=lambda x: x[1], reverse=True)
+#         return result
+
+#     # Large doc: use embedding filtering
+#     cosine_scores = normalized_para_embeddings @ rule_norm
+#     top_indices = np.argsort(cosine_scores)[::-1][:TOP_K]
+
+#     matched: List[Tuple[TextInfo, float]] = []
+#     for idx in top_indices:
+#         para = request.textinformation[idx]
+#         kw = keyword_score(rule_text, para.text)
+#         score = hybrid_score(float(cosine_scores[idx]), kw)
+#         if score >= SIMILARITY_THRESHOLD:
+#             matched.append((para, score))
+
+#     # FIX 5: Fallback — never send empty context to the LLM.
+#     # If nothing clears the threshold, send the top-5 by cosine anyway
+#     # so the LLM can make the final call instead of defaulting to "Not Found".
+#     if not matched:
+#         logger.warning(
+#             "No paragraphs cleared threshold %.2f for rule. Falling back to top-5 by cosine.",
+#             SIMILARITY_THRESHOLD,
+#         )
+#         fallback_indices = np.argsort(cosine_scores)[::-1][:5]
+#         for idx in fallback_indices:
+#             para = request.textinformation[idx]
+#             kw = keyword_score(rule_text, para.text)
+#             score = hybrid_score(float(cosine_scores[idx]), kw)
+#             matched.append((para, score))
+
+#     return matched
+
+
+# async def _process_rule(
+#     rule: RuleInfo,
+#     normalized_para_embeddings: np.ndarray,
+#     request: RuleCheckRequest,
+#     embedding_model,
+#     llm_model,
+# ) -> Tuple[str, PlayBookReviewResponse]:
+
+#     rule_text = f"TITLE: {rule.title}\n" f"INSTRUCTION: {rule.instruction}\n" f"DESCRIPTION: {rule.description}\n"
+
+#     rule_emb = await get_embedding(embedding_model, rule_text)
+#     rule_norm = rule_emb / (np.linalg.norm(rule_emb) + 1e-10)
+
+#     # FIX 4+5 applied here
+#     matched = _select_paragraphs_for_rule(rule_text, rule_norm, normalized_para_embeddings, request)
+
+#     result = RuleResult(
+#         title=rule.title,
+#         instruction=rule.instruction,
+#         description=rule.description,
+#         paragraphidentifier=",".join(p.paraindetifier for p, _ in matched),
+#         paragraphcontext="\n\n".join(f"PARA_ID: {p.paraindetifier}\nTEXT: {p.text.strip()}" for p, _ in matched),
+#         similarity_scores=[score for _, score in matched],
+#     )
+
+#     try:
+#         llm_response: PlayBookReviewLLMResponse = await llm_model.generate(
+#             prompt=SIMILARITY_PROMPT,
+#             context={
+#                 "rule_title": result.title,
+#                 "rule_instruction": result.instruction,
+#                 "rule_description": result.description,
+#                 "paragraphs": result.paragraphcontext,
+#             },
+#             response_model=PlayBookReviewLLMResponse,
+#         )
+
+#     except Exception as exc:
+#         logger.exception("LLM rule evaluation failed.")
+#         llm_response = PlayBookReviewLLMResponse(
+#             para_identifiers=[],
+#             status="Error",
+#             reason=str(exc),
+#             suggestion="",
+#             suggested_fix="",
+#         )
+
+#     return rule.title, PlayBookReviewResponse(
+#         rule_title=rule.title,
+#         rule_instruction=rule.instruction,
+#         rule_description=rule.description,
+#         content=llm_response,
+#     )
+
+
+# # ==============================
+# # Main Entry
+# # ==============================
+
+
+# async def review_document(
+#     session_id: str,
+#     request: RuleCheckRequest,
+#     force_update_rules: Optional[List[str]] = None,
+# ) -> PlayBookReviewFinalResponse:
+
+#     force_update_rules = force_update_rules or []
+
+#     container = get_service_container()
+#     embedding_model = container.embedding_service
+#     llm_model = container.azure_openai_model
+
+#     session_data = container.session_manager.get_session(session_id)
+#     if not session_data:
+#         return PlayBookReviewFinalResponse(
+#             rules_review=[],
+#             missing_clauses=None,
+#         )
+
+#     agent_cache = session_data.tool_results.get(AGENT_NAME, {})
+#     cached_reviews: Dict[str, PlayBookReviewResponse] = {r.rule_title: r for r in agent_cache.get("rules_review", [])}
+
+#     # Determine stale rules
+#     rules_to_update = []
+#     for rule in request.rulesinformation:
+#         cached = cached_reviews.get(rule.title)
+#         if not cached or rule.title in force_update_rules or cached.rule_description != rule.description or cached.rule_instruction != rule.instruction:
+#             rules_to_update.append(rule)
+
+#     # If nothing changed, return cache
+#     if not rules_to_update:
+#         return PlayBookReviewFinalResponse(
+#             rules_review=list(cached_reviews.values()),
+#             missing_clauses=agent_cache.get("missing_clauses"),
+#         )
+
+#     # Precompute normalized paragraph embeddings once
+#     para_embeddings = np.array(await asyncio.gather(*[get_embedding(embedding_model, p.text) for p in request.textinformation]))
+#     normalized_para_embeddings = normalize_embeddings(para_embeddings)
+
+#     # Process rules concurrently
+#     updates = await asyncio.gather(
+#         *[
+#             _process_rule(
+#                 rule,
+#                 normalized_para_embeddings,
+#                 request,
+#                 embedding_model,
+#                 llm_model,
+#             )
+#             for rule in rules_to_update
+#         ]
+#     )
+
+#     cached_reviews.update(dict(updates))
+
+#     # Recompute missing clauses if doc OR rules changed
+#     full_text = "\n\n".join(f"PARA_ID: {p.paraindetifier}\nTEXT: {p.text}" for p in request.textinformation)
+
+#     doc_hash = _hash(full_text)
+#     rules_hash = _hash("".join(r.title + r.description for r in request.rulesinformation))
+
+#     cached_doc_hash = agent_cache.get("doc_hash")
+#     cached_rules_hash = agent_cache.get("rules_hash")
+
+#     if doc_hash != cached_doc_hash or rules_hash != cached_rules_hash:
+#         logger.info("Re-evaluating missing clauses.")
+#         reviewed_summary = _build_reviewed_rules_summary(cached_reviews)
+#         missing_clauses = await get_missing_clauses(llm_model, full_text, reviewed_summary)
+#     else:
+#         missing_clauses = agent_cache.get("missing_clauses")
+
+#     session_data.tool_results[AGENT_NAME] = {
+#         "rules_review": list(cached_reviews.values()),
+#         "missing_clauses": missing_clauses,
+#         "doc_hash": doc_hash,
+#         "rules_hash": rules_hash,
+#     }
+
+#     return PlayBookReviewFinalResponse(
+#         rules_review=list(cached_reviews.values()),
+#         missing_clauses=missing_clauses,
+#     )
 
 
 # import asyncio
@@ -685,3 +685,339 @@ async def review_document(
 #         rules_review=list(cached_rules_review.values()),
 #         missing_clauses=missing_clauses,
 #     )
+
+import asyncio
+import hashlib
+import re
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from src.config.logging import get_logger
+from src.dependencies import get_service_container
+from src.schemas.playbook_review import (
+    MissingClausesLLMResponse,
+    PlayBookReviewFinalResponse,
+    PlayBookReviewLLMResponse,
+    PlayBookReviewResponse,
+    RuleCheckRequest,
+    RuleInfo,
+    RuleResult,
+    TextInfo,
+)
+
+logger = get_logger(__name__)
+
+# ==============================
+# Configuration
+# ==============================
+
+AGENT_NAME = "playbook_review_agent"
+
+SIMILARITY_PROMPT = Path(r"src\services\prompts\v1\ai_review_prompt_v2.mustache").read_text(encoding="utf-8")
+
+MISSING_CLAUSES_PROMPT = Path(r"src\services\prompts\v1\missing_clauses.mustache").read_text(encoding="utf-8")
+
+
+# ==============================
+# Hashing
+# ==============================
+
+
+def _hash(text: str) -> str:
+    return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+
+# ==============================
+# Clause Extraction
+# ==============================
+
+
+def _normalize(text: str) -> str:
+    """Lowercase and strip all punctuation/whitespace for fuzzy matching."""
+    return re.sub(r"[^a-z0-9\s]", "", text.lower()).strip()
+
+
+def extract_clauses_from_paragraphs(
+    textinformation: List[TextInfo],
+    rule_titles: List[str],
+) -> Dict[str, List[TextInfo]]:
+    """
+    Groups document paragraphs into clauses by matching rule titles as section headers.
+
+    Handles two paragraph formats found in contracts:
+
+        Format A — Header and content are merged into one paragraph:
+            P0013: "Epit Specifications. Upon execution of this Agreement..."
+            → Detected when para text STARTS WITH the normalized rule title.
+
+        Format B — Header is a standalone paragraph, content follows:
+            P0015: "Restriction on Use and Disclosure."   ← header only
+            P0016: "You agree to use the Epit Specifications..."
+            P0018: "Without limiting the generality..."
+            → Detected when para text exactly matches the normalized rule title.
+
+    Matching priority:
+        1. Exact match after normalization  (Format B)
+        2. Para starts with title           (Format A)
+
+    All paragraphs after a matched header are assigned to that clause until
+    the next recognized clause header is encountered.
+
+    Returns:
+        Dict mapping rule_title (original casing) → List[TextInfo] of all
+        paragraphs belonging to that clause, in document order.
+    """
+    # Build lookup: normalized_title → original_title
+    normalized_titles: Dict[str, str] = {_normalize(t): t for t in rule_titles}
+
+    # Initialize empty lists for every rule so callers always get a key
+    clause_map: Dict[str, List[TextInfo]] = {title: [] for title in rule_titles}
+    current_clause: Optional[str] = None
+
+    for para in textinformation:
+        para_norm = _normalize(para.text)
+        matched_title: Optional[str] = None
+
+        for norm_title, original_title in normalized_titles.items():
+            # Priority 1: Exact match — standalone header paragraph (Format B)
+            if para_norm == norm_title:
+                matched_title = original_title
+                break
+
+            # Priority 2: Para starts with title — merged header+content (Format A)
+            if para_norm.startswith(norm_title):
+                matched_title = original_title
+                break
+
+        if matched_title:
+            # This paragraph opens a new clause; include it (it may carry content)
+            current_clause = matched_title
+            clause_map[current_clause].append(para)
+        elif current_clause is not None:
+            # Body paragraph — belongs to the currently active clause
+            clause_map[current_clause].append(para)
+        # else: paragraph appears before any recognized clause header — skip
+
+    # Warn on any rule whose clause was never found in the document
+    for title, paras in clause_map.items():
+        if not paras:
+            logger.warning(
+                "Clause extraction: no paragraphs found for rule '%s'. " "Rule will be evaluated against the full document as fallback.",
+                title,
+            )
+
+    return clause_map
+
+
+# ==============================
+# Missing Clauses
+# ==============================
+
+
+def _build_reviewed_rules_summary(reviewed: Dict[str, PlayBookReviewResponse]) -> str:
+    lines = []
+    for title, review in reviewed.items():
+        para_ids = ", ".join(review.content.para_identifiers) or "none"
+        lines.append(f"RULE: {title} | STATUS: {review.content.status} | PARAS: {para_ids}")
+    return "\n".join(lines) if lines else "None"
+
+
+async def get_missing_clauses(
+    llm_model,
+    full_text: str,
+    reviewed_rules_summary: str,
+) -> MissingClausesLLMResponse:
+
+    try:
+        response = await llm_model.generate(
+            prompt=MISSING_CLAUSES_PROMPT,
+            context={
+                "data": full_text,
+                "reviewed_rules_summary": reviewed_rules_summary,
+            },
+            response_model=MissingClausesLLMResponse,
+        )
+        logger.info("Missing clauses identified: %d", len(response.missing_clauses))
+        return response
+
+    except Exception as exc:
+        logger.exception("Missing clauses evaluation failed.")
+        return MissingClausesLLMResponse(
+            missing_clauses=[],
+            total_missing=0,
+            summary=f"LLM error: {exc}",
+        )
+
+
+# ==============================
+# Rule Processing
+# ==============================
+
+
+async def _process_rule(
+    rule: RuleInfo,
+    clause_map: Dict[str, List[TextInfo]],
+    full_document: List[TextInfo],
+    llm_model,
+) -> Tuple[str, PlayBookReviewResponse]:
+    """
+    Evaluates a single rule against its extracted clause paragraphs.
+
+    Clause resolution order:
+        1. Use paragraphs extracted for this rule title by extract_clauses_from_paragraphs().
+        2. If none were found (clause title absent from document), fall back to the
+           full document so the LLM can make the final call rather than defaulting
+           to "Not Found" with empty context.
+    """
+    matched_paras: List[TextInfo] = clause_map.get(rule.title, [])
+
+    if not matched_paras:
+        logger.warning(
+            "No extracted paragraphs for rule '%s'. Falling back to full document.",
+            rule.title,
+        )
+        matched_paras = full_document
+
+    paragraph_context = "\n\n".join(f"PARA_ID: {p.paraindetifier}\nTEXT: {p.text.strip()}" for p in matched_paras)
+
+    result = RuleResult(
+        title=rule.title,
+        instruction=rule.instruction,
+        description=rule.description,
+        paragraphidentifier=",".join(p.paraindetifier for p in matched_paras),
+        paragraphcontext=paragraph_context,
+        similarity_scores=[],  # Not used in boundary-based extraction
+    )
+
+    try:
+        llm_response: PlayBookReviewLLMResponse = await llm_model.generate(
+            prompt=SIMILARITY_PROMPT,
+            context={
+                "rule_title": result.title,
+                "rule_instruction": result.instruction,
+                "rule_description": result.description,
+                "paragraphs": result.paragraphcontext,
+            },
+            response_model=PlayBookReviewLLMResponse,
+        )
+
+    except Exception as exc:
+        logger.exception("LLM rule evaluation failed for rule '%s'.", rule.title)
+        llm_response = PlayBookReviewLLMResponse(
+            para_identifiers=[],
+            status="Error",
+            reason=str(exc),
+            suggestion="",
+            suggested_fix="",
+        )
+
+    return rule.title, PlayBookReviewResponse(
+        rule_title=rule.title,
+        rule_instruction=rule.instruction,
+        rule_description=rule.description,
+        content=llm_response,
+    )
+
+
+# ==============================
+# Main Entry
+# ==============================
+
+
+async def review_document(
+    session_id: str,
+    request: RuleCheckRequest,
+    force_update_rules: Optional[List[str]] = None,
+) -> PlayBookReviewFinalResponse:
+
+    force_update_rules = force_update_rules or []
+
+    container = get_service_container()
+    llm_model = container.azure_openai_model  # Embeddings no longer needed
+
+    session_data = container.session_manager.get_session(session_id)
+    if not session_data:
+        return PlayBookReviewFinalResponse(
+            rules_review=[],
+            missing_clauses=None,
+        )
+
+    agent_cache = session_data.tool_results.get(AGENT_NAME, {})
+    cached_reviews: Dict[str, PlayBookReviewResponse] = {r.rule_title: r for r in agent_cache.get("rules_review", [])}
+
+    # Determine which rules are stale and need re-evaluation
+    rules_to_update: List[RuleInfo] = []
+    for rule in request.rulesinformation:
+        cached = cached_reviews.get(rule.title)
+        if not cached or rule.title in force_update_rules or cached.rule_description != rule.description or cached.rule_instruction != rule.instruction:
+            rules_to_update.append(rule)
+
+    # Nothing changed — serve from cache
+    if not rules_to_update:
+        logger.info("All rules up to date in cache. Returning cached results.")
+        return PlayBookReviewFinalResponse(
+            rules_review=list(cached_reviews.values()),
+            missing_clauses=agent_cache.get("missing_clauses"),
+        )
+
+    # ------------------------------------------------------------------
+    # Extract clauses once for all stale rules
+    # ------------------------------------------------------------------
+    rule_titles = [rule.title for rule in rules_to_update]
+    clause_map = extract_clauses_from_paragraphs(request.textinformation, rule_titles)
+
+    logger.info(
+        "Clause extraction complete. %d/%d rules have matched paragraphs.",
+        sum(1 for paras in clause_map.values() if paras),
+        len(rule_titles),
+    )
+
+    # ------------------------------------------------------------------
+    # Process stale rules concurrently
+    # ------------------------------------------------------------------
+    updates: List[Tuple[str, PlayBookReviewResponse]] = await asyncio.gather(
+        *[
+            _process_rule(
+                rule,
+                clause_map,
+                request.textinformation,  # fallback
+                llm_model,
+            )
+            for rule in rules_to_update
+        ]
+    )
+
+    cached_reviews.update(dict(updates))
+
+    # ------------------------------------------------------------------
+    # Recompute missing clauses if document or rules changed
+    # ------------------------------------------------------------------
+    full_text = "\n\n".join(f"PARA_ID: {p.paraindetifier}\nTEXT: {p.text}" for p in request.textinformation)
+
+    doc_hash = _hash(full_text)
+    rules_hash = _hash("".join(r.title + r.description for r in request.rulesinformation))
+
+    cached_doc_hash = agent_cache.get("doc_hash")
+    cached_rules_hash = agent_cache.get("rules_hash")
+
+    if doc_hash != cached_doc_hash or rules_hash != cached_rules_hash:
+        logger.info("Document or rules changed. Re-evaluating missing clauses.")
+        reviewed_summary = _build_reviewed_rules_summary(cached_reviews)
+        missing_clauses = await get_missing_clauses(llm_model, full_text, reviewed_summary)
+    else:
+        missing_clauses = agent_cache.get("missing_clauses")
+
+    # ------------------------------------------------------------------
+    # Persist updated results to session cache
+    # ------------------------------------------------------------------
+    session_data.tool_results[AGENT_NAME] = {
+        "rules_review": list(cached_reviews.values()),
+        "missing_clauses": missing_clauses,
+        "doc_hash": doc_hash,
+        "rules_hash": rules_hash,
+    }
+
+    return PlayBookReviewFinalResponse(
+        rules_review=list(cached_reviews.values()),
+        missing_clauses=missing_clauses,
+    )

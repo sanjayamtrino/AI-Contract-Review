@@ -95,14 +95,79 @@ Choose exactly one risk level:
                matter.
 
 Step 6 — WRITE REASON AND SUGGESTIONS:
-  reason        : 2–4 sentences explaining your verdict. You MUST cite EXACT text from the
-                  paragraphs using direct quotes. If an inter-paragraph conflict exists, you
-                  MUST describe it here with quotes from both conflicting paragraphs.
+  matched_clause_name :
+                  Concise human-readable label for the clause this rule reviewed in the
+                  contract. Prefer the clause heading copied verbatim from the paragraph
+                  text (e.g. "Confidentiality", "Term and Survival", "Governing Law").
+                  Max 5 words. Plain text only — no leading numbers, no quotes, no JSON.
+                  If status is "Not Found", return an empty string "".
+
+  reason        : 2–4 sentences explaining your verdict. Begin by naming the matched clause
+                  (e.g. "The 'Term and Survival' clause states ..."). You MUST cite EXACT
+                  text from the paragraphs using direct quotes. If an inter-paragraph
+                  conflict exists, you MUST describe it here with quotes from both
+                  conflicting paragraphs.
+
   suggestion    : If risk level is Low, Medium, Critical, or Not Found — describe what should
-                  be changed or added. If Good, use empty string.
-  suggested_fix : If risk level is Low, Medium, Critical, or Not Found — write the full
-                  corrected or new clause text that would satisfy the rule. If Good, use
-                  empty string.
+                  be changed or added. Plain prose. If Good, use empty string.
+
+  suggested_fix : The EXACT replacement clause text that must go into THIS specific
+                  contract for THIS specific rule. The user will substitute this string
+                  directly into the document without further editing — treat it like a
+                  surgical edit, not a template suggestion.
+
+                  STRUCTURAL RULES — the value MUST be:
+                    • a single self-contained block of clause text in the same legal
+                      register as the contract;
+                    • drafted to fit the surrounding contract — same defined terms, same
+                      party names that already appear in the matched paragraph;
+                    • free of any prefix like "Suggested:", "Consider:", "Replace with:",
+                      "Here is the fix:", "You should...", "Recommended clause:";
+                    • free of markdown, bullet lists, headings, JSON, code fences,
+                      backticks, asterisks, or quotation marks wrapping the whole block;
+                    • free of placeholder tokens like "[Party Name]", "[Date]",
+                      "[Insert ...]", "<...>" — use the ACTUAL party names, dates and
+                      defined terms that appear in the contract paragraphs above. If a
+                      value is genuinely unknown, omit it rather than invent a placeholder.
+
+                  SPECIFICITY — NOT BOILERPLATE:
+                  Generic boilerplate is a failure. The suggested_fix MUST address the
+                  specific deviation you cited in the reason field. Examples:
+                    • If the contract says "one (1) year" and the rule requires "three (3)
+                      years", the suggested_fix replaces that exact term in the contract's
+                      own wording, not a generic survival clause.
+                    • If the contract picks the wrong jurisdiction, the suggested_fix is
+                      the contract's own governing-law sentence rewritten with the
+                      correct jurisdiction — not a generic template clause.
+                    • If a required protection is missing, the suggested_fix is the
+                      additional sentence(s) that should be inserted, in the contract's
+                      voice, citing the contract's own defined terms.
+                  A reader should be able to drop your suggested_fix into the contract,
+                  remove the original deviating words, and have a clean, working clause.
+
+                  VERBATIM-VALUE RULE — NON-NEGOTIABLE:
+                  Every concrete value the rule states (durations, day-counts, percentages,
+                  dollar amounts, thresholds, jurisdictions, named parties, statutory
+                  references, defined terms) MUST appear in the suggested_fix EXACTLY as
+                  written in the RULE INSTRUCTION or RULE DESCRIPTION. Do not round,
+                  expand, contract, paraphrase, or substitute these values. If the rule
+                  says "30 days", you write "30 days" or "thirty (30) days" — never
+                  "60 days", "one month", or any other variant. If the rule says
+                  "California", you do not write "Delaware". Inventing a value the rule
+                  did not specify is a critical defect — the user may apply your text
+                  directly into a binding legal document.
+
+                  SELF-AUDIT BEFORE RETURNING:
+                  Re-read the suggested_fix and confirm: (a) it does not start with any
+                  meta-prefix; (b) it contains zero markdown or placeholders; (c) every
+                  concrete value matches the rule verbatim; (d) it directly fixes the
+                  deviation cited in the reason field. If any check fails, rewrite it
+                  before returning.
+
+                  If status is Good, return an empty string "".
+                  If status is Not Found, return the full new clause text that should be
+                  inserted into the contract, in the same register as the surrounding
+                  document, with every value copied verbatim from the rule description.
 
 ════════════════════════════════════════════════════════
 CRITICAL EVALUATION RULES
@@ -181,8 +246,9 @@ Return ONLY the following JSON object. No additional text, no markdown, no expla
 
 {
   "para_identifiers": ["identifier of matched paragraph(s)"],
+  "matched_clause_name": "Short human-readable clause label (max 5 words). Empty if Not Found.",
   "status": "Good | Low | Medium | Critical | Not Found",
-  "reason": "2-4 sentences with EXACT text quotes from the paragraphs. If a conflict between paragraphs exists, describe it here.",
+  "reason": "2-4 sentences with EXACT text quotes from the paragraphs. Begin by naming the matched clause. If a conflict between paragraphs exists, describe it here.",
   "suggestion": "Remediation guidance describing what to change or add. Empty string if Good.",
-  "suggested_fix": "Full corrected or new clause text that would satisfy the rule. Empty string if Good."
+  "suggested_fix": "Exact replacement clause text — to be substituted directly into the contract. No prefix, no commentary, no markdown. Values copied verbatim from the rule. Empty string if Good."
 }

@@ -28,7 +28,7 @@ class TextInfo(BaseModel):
 
 class RuleCheckRequest(BaseModel):
     rulesinformation: List[RuleInfo] = Field(..., description="List of rules to check against")
-    # textinformation: List[TextInfo] = Field(..., description="List of text paragraphs to check")
+    textinformation: List[TextInfo] = Field(..., description="List of text paragraphs to check")
 
 
 # --------------- Rule Matching Result Schema -------------
@@ -65,7 +65,7 @@ class MissingClauseImportance(str, Enum):
 class MissingClause(BaseModel):
     clause_name: str = Field(..., description="Name of the missing clause")
     status: MissingClauseStatus = Field(..., description="Status of the missing clause")
-    importance: MissingClauseImportance = Field(..., description="Importance of the missing clause (Low, Medium, High)")
+    importance: MissingClauseImportance = Field(..., description="Importance of the missing clause")
     explanation: str = Field(..., description="Explanation of why the clause is missing or incomplete")
 
 
