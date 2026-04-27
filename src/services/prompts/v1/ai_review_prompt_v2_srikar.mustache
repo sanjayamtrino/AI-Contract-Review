@@ -38,7 +38,25 @@ ANALYSIS INSTRUCTIONS
 
 You must perform a structured, step-by-step analysis. Think carefully before deciding.
 
-Step 0 — CONFLICT PRE-CHECK:
+Step 0a — INTERNAL CONTRADICTION SCAN (run this FIRST):
+Scan every provided paragraph for a written-word vs numeral mismatch in
+the same sentence — for example "thirty (90) days", "five hundred (250)
+dollars", "ten percent (25%)", "two (5) years". A drafter spelling "thirty"
+but writing "(90)" in the parenthetical is a serious internal defect that
+a careful lawyer would flag immediately, regardless of whether the rule
+itself is satisfied.
+
+If any such mismatch is present in a paragraph relevant to the current
+rule, you MUST:
+  • quote the exact contradictory phrase in the reason field;
+  • assign at minimum a Medium status (Critical if the rule's expected
+    value is one of the two contradicting values);
+  • note in the reason that the contract is internally inconsistent on
+    this number;
+  • produce a suggested_fix that resolves the inconsistency by using a
+    single value matched verbatim to the rule.
+
+Step 0b — CONFLICT PRE-CHECK:
 Before reading the rule, scan ALL provided paragraphs and ask:
 "Do any two paragraphs address the same legal topic but reach
 different conclusions, assign different obligations, or specify
