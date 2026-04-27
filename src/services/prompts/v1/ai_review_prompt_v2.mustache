@@ -111,15 +111,39 @@ Step 6 — WRITE REASON AND SUGGESTIONS:
   suggestion    : If risk level is Low, Medium, Critical, or Not Found — describe what should
                   be changed or added. Plain prose. If Good, use empty string.
 
-  suggested_fix : The exact replacement text the contract should contain — and nothing else.
-                  This value will be substituted directly into the contract clause without
-                  further editing, so it must be:
-                    • a single self-contained block of clause text,
-                    • drafted in the same legal register as the contract,
-                    • free of any prefix like "Suggested:", "Replace with:", "Consider:",
-                      or any commentary,
-                    • free of markdown, bullet lists, JSON, code fences, or quotes around
-                      the whole block.
+  suggested_fix : The EXACT replacement clause text that must go into THIS specific
+                  contract for THIS specific rule. The user will substitute this string
+                  directly into the document without further editing — treat it like a
+                  surgical edit, not a template suggestion.
+
+                  STRUCTURAL RULES — the value MUST be:
+                    • a single self-contained block of clause text in the same legal
+                      register as the contract;
+                    • drafted to fit the surrounding contract — same defined terms, same
+                      party names that already appear in the matched paragraph;
+                    • free of any prefix like "Suggested:", "Consider:", "Replace with:",
+                      "Here is the fix:", "You should...", "Recommended clause:";
+                    • free of markdown, bullet lists, headings, JSON, code fences,
+                      backticks, asterisks, or quotation marks wrapping the whole block;
+                    • free of placeholder tokens like "[Party Name]", "[Date]",
+                      "[Insert ...]", "<...>" — use the ACTUAL party names, dates and
+                      defined terms that appear in the contract paragraphs above. If a
+                      value is genuinely unknown, omit it rather than invent a placeholder.
+
+                  SPECIFICITY — NOT BOILERPLATE:
+                  Generic boilerplate is a failure. The suggested_fix MUST address the
+                  specific deviation you cited in the reason field. Examples:
+                    • If the contract says "one (1) year" and the rule requires "three (3)
+                      years", the suggested_fix replaces that exact term in the contract's
+                      own wording, not a generic survival clause.
+                    • If the contract picks the wrong jurisdiction, the suggested_fix is
+                      the contract's own governing-law sentence rewritten with the
+                      correct jurisdiction — not a generic template clause.
+                    • If a required protection is missing, the suggested_fix is the
+                      additional sentence(s) that should be inserted, in the contract's
+                      voice, citing the contract's own defined terms.
+                  A reader should be able to drop your suggested_fix into the contract,
+                  remove the original deviating words, and have a clean, working clause.
 
                   VERBATIM-VALUE RULE — NON-NEGOTIABLE:
                   Every concrete value the rule states (durations, day-counts, percentages,
@@ -133,10 +157,17 @@ Step 6 — WRITE REASON AND SUGGESTIONS:
                   did not specify is a critical defect — the user may apply your text
                   directly into a binding legal document.
 
+                  SELF-AUDIT BEFORE RETURNING:
+                  Re-read the suggested_fix and confirm: (a) it does not start with any
+                  meta-prefix; (b) it contains zero markdown or placeholders; (c) every
+                  concrete value matches the rule verbatim; (d) it directly fixes the
+                  deviation cited in the reason field. If any check fails, rewrite it
+                  before returning.
+
                   If status is Good, return an empty string "".
                   If status is Not Found, return the full new clause text that should be
-                  inserted into the contract, again copying every value verbatim from the
-                  rule description.
+                  inserted into the contract, in the same register as the surrounding
+                  document, with every value copied verbatim from the rule description.
 
 ════════════════════════════════════════════════════════
 CRITICAL EVALUATION RULES

@@ -150,8 +150,17 @@ async def playbook_review_service(
         logger.error("Failed to parse document: %s", parse_result.error_message)
         return PlayBookReviewFinalResponse(rules_review=[], missing_clauses=None)
 
-    for chunk in parse_result.chunks:
-        session_data.chunk_store[chunk.chunk_index] = chunk
+    # Cache chunks on the session when one is available. We do not require a
+    # pre-existing session — review can still run end-to-end from just the
+    # uploaded document, the session is only used to speed up repeat calls.
+    if session_data is not None:
+        for chunk in parse_result.chunks:
+            session_data.chunk_store[chunk.chunk_index] = chunk
+    else:
+        logger.info(
+            "No session_data attached (likely an unknown X-Session-Id). "
+            "Continuing without session-side caching."
+        )
 
     logger.info(
         "Parsed document with %d clause chunks", len(parse_result.chunks),
