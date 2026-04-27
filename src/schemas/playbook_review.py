@@ -28,7 +28,7 @@ class TextInfo(BaseModel):
 
 class RuleCheckRequest(BaseModel):
     rulesinformation: List[RuleInfo] = Field(..., description="List of rules to check against")
-    textinformation: List[TextInfo] = Field(..., description="List of text paragraphs to check")
+    # textinformation: List[TextInfo] = Field(..., description="List of text paragraphs to check")
 
 
 # --------------- Rule Matching Result Schema -------------
@@ -122,3 +122,16 @@ class PlayBookReviewFinalResponse(BaseModel):
 
     rules_review: List[PlayBookReviewResponse] = Field(..., description="List of reviews for each rule.")
     missing_clauses: Optional[MissingClausesLLMResponse] = Field(None, description="Identified missing clauses in the contract, if any.")
+
+
+class Clause(BaseModel):
+    """Schema for a contract clause."""
+
+    title: str = Field(description="Title of the clause")
+    content: str = Field(description="Content of the clause")
+
+
+class ClauseExtractionResponse(BaseModel):
+    """Response model for clause extraction."""
+
+    clauses: List[Clause] = Field(description="List of extracted clauses")

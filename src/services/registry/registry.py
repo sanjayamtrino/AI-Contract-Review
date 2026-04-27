@@ -2,10 +2,11 @@ from typing import Dict, Optional
 
 from src.config.logging import Logger
 from src.exceptions.parser_exceptions import ParserAlreadyRegistered
+from src.services.registry.ai_parser import AIParser
 from src.services.registry.base_parser import BaseParser
 
 # from src.services.registry.doc_parser import DocxParser
-from src.services.registry.semantic_parser import DocxParser
+# from src.services.registry.semantic_parser import DocxParser
 
 
 class ParserRegistry(Logger):
@@ -20,7 +21,8 @@ class ParserRegistry(Logger):
     def _register_default_parsers(self) -> None:
         """Register default parsers in the registry."""
 
-        self.parsers["DOCX"] = DocxParser()
+        # self.parsers["DOCX"] = DocxParser()
+        self.parsers["DOCX"] = AIParser()
         self.logger.info("Registered default parsers into the registry: DOCX")
 
     def register_parser(self, name: str, parser_class: BaseParser) -> None:
