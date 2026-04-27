@@ -38,7 +38,27 @@ ANALYSIS INSTRUCTIONS
 
 You must perform a structured, step-by-step analysis. Think carefully before deciding.
 
-Step 0 — CONFLICT PRE-CHECK:
+Step 0a — TITLE-ALIGNMENT GUARD (run this FIRST):
+The paragraph above was selected by an upstream matcher that may be permissive.
+Read its leading clause heading (first line) and its body. Compare the clause's
+actual subject matter to the RULE TITLE and RULE INSTRUCTION.
+
+If the clause's topic is clearly UNRELATED to the rule (different legal topic,
+different obligation, different party), you MUST set status to "Not Found" and
+explain in the reason field that the matched clause does not address the
+rule's topic. Do NOT attempt to score compliance when the topic is wrong.
+
+Examples of misalignment that should return "Not Found":
+  • Rule = "Governing Law", clause = "Confidentiality Obligations"
+  • Rule = "Indemnification", clause = "Term and Termination"
+  • Rule = "Audit Rights", clause = "Notices"
+
+Examples that ARE aligned (continue evaluating):
+  • Rule = "Confidentiality", clause = "Non-Disclosure Obligations" (same topic)
+  • Rule = "Term and Survival", clause = "Term" (same topic, narrower wording)
+  • Rule = "Limitation of Liability", clause = "Remedies and Damages" (overlaps)
+
+Step 0b — CONFLICT PRE-CHECK:
 Before reading the rule, scan ALL provided paragraphs and ask:
 "Do any two paragraphs address the same legal topic but reach
 different conclusions, assign different obligations, or specify
@@ -144,6 +164,19 @@ Step 6 — WRITE REASON AND SUGGESTIONS:
                       voice, citing the contract's own defined terms.
                   A reader should be able to drop your suggested_fix into the contract,
                   remove the original deviating words, and have a clean, working clause.
+
+                  ANTI-LAZY-COPY RULE:
+                  Do NOT copy the rule_description verbatim into suggested_fix. The
+                  rule_description is the company's IDEAL position written in the
+                  abstract; it usually does not use the contract's own party names or
+                  defined terms. Your suggested_fix must read as the contract's voice,
+                  not the playbook's voice. Start from the matched paragraph's actual
+                  wording, identify the specific words that deviate, replace ONLY those
+                  with the rule's required values, and keep the rest of the contract's
+                  phrasing intact. If the entire clause needs to be rewritten because
+                  the contract is fundamentally wrong on this topic, write fresh text in
+                  the contract's register using the contract's own party names and
+                  defined terms — never paste the rule_description as the fix.
 
                   VERBATIM-VALUE RULE — NON-NEGOTIABLE:
                   Every concrete value the rule states (durations, day-counts, percentages,

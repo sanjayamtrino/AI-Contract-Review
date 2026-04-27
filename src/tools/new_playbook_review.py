@@ -24,9 +24,13 @@ logger = get_logger(__name__)
 
 AGENT_NAME = "playbook_review_agent"
 
-# Hybrid title matching thresholds.
-FUZZY_TITLE_THRESHOLD = 0.65
-TITLE_EMBEDDING_THRESHOLD = 0.55
+# Hybrid title matching thresholds. Tuned permissive — when neither layer
+# reaches the threshold we still surface the top embedding candidate so the
+# LLM can verify the match itself (the prompt has a title-alignment guard
+# that returns "Not Found" if the candidate is the wrong topic).
+FUZZY_TITLE_THRESHOLD = 0.50
+TITLE_EMBEDDING_THRESHOLD = 0.40
+TITLE_EMBEDDING_BEST_EFFORT_FLOOR = 0.20
 
 # Rule-title content words that should not influence fuzzy token-overlap.
 _TITLE_STOP_WORDS = {
@@ -129,6 +133,21 @@ async def _find_matching_chunk(
             chunk.metadata.get("section_heading", ""),
         )
         return chunk, "title_embedding"
+
+    # Best-effort fallback: if even the embedding match is weak, still surface
+    # the top candidate so the LLM gets a chance. The prompt's title-alignment
+    # guard will return "Not Found" if the candidate is genuinely off-topic.
+    # This avoids the failure mode where every borderline rule returns
+    # Not Found purely because of a sub-threshold score.
+    if best_score >= TITLE_EMBEDDING_BEST_EFFORT_FLOOR and best_idx >= 0:
+        chunk = headed_chunks[best_idx]
+        logger.info(
+            "Title match (best-effort %.2f): rule '%s' -> clause '%s' "
+            "(LLM will verify topic alignment).",
+            best_score, rule.title,
+            chunk.metadata.get("section_heading", ""),
+        )
+        return chunk, "title_best_effort"
 
     return None, ""
 
