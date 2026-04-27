@@ -108,17 +108,52 @@ Step 6 — WRITE REASON AND SUGGESTIONS:
                   MUST describe it here with quotes from both conflicting paragraphs.
   suggestion    : If risk level is Low, Medium, Critical, or Not Found — describe what should
                   be changed or added. Plain prose is fine here. If Good, use empty string.
-  suggested_fix : The exact replacement text the contract should contain — and nothing else.
-                  This value will be substituted directly into the contract clause without any
-                  further editing, so it must be:
-                    • a single self-contained block of clause text,
-                    • drafted in the same legal register as the contract,
-                    • free of any prefix like "Suggested:", "Consider:", "You should...",
-                      "Replace with:", "Here is the fix:", or any commentary,
-                    • free of markdown, bullet lists, headings, JSON, code fences, or quotes
-                      around the whole block,
-                    • free of brackets, ellipses, or placeholders like "[party name]" unless
-                      that placeholder is genuinely meant to remain in the final clause.
+  suggested_fix : The EXACT replacement clause text that goes into THIS specific contract
+                  for THIS specific rule. The user substitutes this string directly into
+                  the document without further editing — treat it as a surgical edit, not
+                  a generic template suggestion.
+
+                  STRUCTURAL RULES — the value MUST be:
+                    • a single self-contained block of clause text in the same legal
+                      register as the contract;
+                    • drafted to fit the surrounding contract — same defined terms, same
+                      party names that already appear in the matched paragraphs;
+                    • free of any prefix like "Suggested:", "Consider:", "Replace with:",
+                      "Here is the fix:", "You should...", "Recommended clause:";
+                    • free of markdown, bullet lists, headings, JSON, code fences,
+                      backticks, asterisks, or quotation marks wrapping the whole block;
+                    • free of placeholder tokens like "[Party Name]", "[Date]",
+                      "[Insert ...]", "<...>" — use the ACTUAL party names, dates, and
+                      defined terms that appear in the contract paragraphs above. If a
+                      value is genuinely unknown, omit it rather than invent a placeholder.
+
+                  SPECIFICITY — NOT BOILERPLATE:
+                  Generic boilerplate is a failure. The suggested_fix MUST address the
+                  specific deviation you cited in the reason field. Examples:
+                    • If the contract says "one (1) year" and the rule requires "three (3)
+                      years", the suggested_fix replaces that exact term in the contract's
+                      own wording, not a generic survival clause.
+                    • If the contract picks the wrong jurisdiction, the suggested_fix is
+                      the contract's own governing-law sentence rewritten with the
+                      correct jurisdiction — not a generic template clause.
+                    • If a required protection is missing, the suggested_fix is the
+                      additional sentence(s) that should be inserted, in the contract's
+                      voice, citing the contract's own defined terms.
+                  A reader should be able to drop your suggested_fix into the contract,
+                  remove the original deviating words, and have a clean, working clause.
+
+                  ANTI-LAZY-COPY RULE:
+                  Do NOT copy the rule_description verbatim into suggested_fix. The
+                  rule_description is the company's IDEAL position written in the abstract;
+                  it usually does not use the contract's own party names or defined terms.
+                  Your suggested_fix must read as the contract's voice, not the playbook's
+                  voice. Start from the matched paragraph's actual wording, identify the
+                  specific words that deviate, replace ONLY those with the rule's required
+                  values, and keep the rest of the contract's phrasing intact. If the
+                  entire clause needs to be rewritten because the contract is fundamentally
+                  wrong on this topic, write fresh text in the contract's register using
+                  the contract's own party names and defined terms — never paste the
+                  rule_description as the fix.
 
                   VERBATIM-VALUE RULE — NON-NEGOTIABLE:
                   Every concrete value the rule states (durations, day-counts, percentages,
@@ -133,10 +168,18 @@ Step 6 — WRITE REASON AND SUGGESTIONS:
                   Inventing a value the rule did not specify is a critical defect — the user
                   may apply your text directly into a binding legal document.
 
+                  SELF-AUDIT BEFORE RETURNING:
+                  Re-read the suggested_fix and confirm: (a) it does not start with any
+                  meta-prefix; (b) it contains zero markdown or placeholders; (c) every
+                  concrete value matches the rule verbatim; (d) it directly fixes the
+                  deviation cited in the reason field; (e) it is NOT a verbatim copy of the
+                  rule_description. If any check fails, rewrite it before returning.
+
                   If status is Good, return an empty string "".
                   If status is Not Found, return the full new clause text that should be
-                  inserted into the contract, again copying every value verbatim from the
-                  rule description.
+                  inserted into the contract, in the same register as the surrounding
+                  document, with every value copied verbatim from the rule description but
+                  the surrounding language phrased in the contract's voice.
 
 ════════════════════════════════════════════════════════
 CRITICAL EVALUATION RULES
