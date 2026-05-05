@@ -17,8 +17,9 @@ class ParaSimilarity(BaseModel):
 class RuleInfo(BaseModel):
     title: str = Field(..., description="Title of the rule")
     instruction: str = Field(..., description="Instruction for the rule")
-    description: str
-    tags: Optional[List[str]] = None
+    description: str = Field(..., description="Detailed description of the rule")
+    tags: Optional[List[str]] = Field(None, description="List of tags for the rule")
+    type: Optional[str] = Field("Primary", description="Type of the rule, e.g., obligation, prohibition, etc.")
 
 
 class TextInfo(BaseModel):
@@ -112,6 +113,7 @@ class PlayBookReviewResponse(BaseModel):
     """Schema for AI review reponse for the given rules and paras."""
 
     rule_title: str = Field(..., description="Title of the rule that was considered.")
+    rule_type: Optional[str] = Field("primary", description="Type of the rule, e.g., obligation, prohibition, etc.")
     rule_instruction: str = Field(..., description="Rule Instruction that was considered.")
     rule_description: str = Field(..., description="Rule Description that was considered.")
     content: PlayBookReviewLLMResponse = Field(..., description="Content of the review for the given rule and paragraphs.")
