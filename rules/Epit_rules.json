@@ -1,0 +1,134 @@
+{
+    "rulesinformation": [
+        {
+            "title": "Grant and Scope of License",
+            "instruction": "Verify that a limited, non-exclusive license is granted for the Specifications solely for the stated Purpose, with no implied rights.",
+            "description": "Epit shall grant the Vendor a limited, non-exclusive, non-transferable, revocable right to use the Epit Specifications solely for the Purpose of creating and supporting interfaces or integrations between the Vendor's software and Epit's software for the benefit of authorized Customers. No other rights to the Specifications, Epit software, or related intellectual property are granted by implication, estoppel, or otherwise. Epit may release new versions of the Specifications during the term, and the Vendor may request updated versions.",
+            "fallbacks": [
+                {
+                    "title": "Grant and Scope of License - Broader",
+                    "instruction": "Accept a non-exclusive license for the Purpose without requiring revocability or transferability restrictions.",
+                    "description": "Epit shall grant the Vendor a non-exclusive right to use the Epit Specifications for the Purpose of building integrations with Epit's software for Customers. The Specifications may be updated by Epit during the term."
+                }
+            ]
+        },
+        {
+            "title": "Restrictions on Use and Disclosure",
+            "instruction": "Confirm restrictions on third-party distribution, internet posting, marketing use, and that employees and agents are bound to the same obligations.",
+            "description": "The Vendor shall not distribute, disclose, or make available the Epit Specifications, in whole or in part, to any person or entity outside of the Vendor and authorized Customers. The Vendor shall not post the Specifications on the Internet, nor incorporate them in any marketing materials, white papers, or documentation provided to third parties. The Vendor shall inform all employees and agents with access to the Specifications of the obligations under this Agreement and shall remain responsible for their compliance.",
+            "fallbacks": [
+                {
+                    "title": "Restrictions on Use and Disclosure - Limited",
+                    "instruction": "Accept restrictions on third-party distribution and internet posting; marketing-use restriction is optional.",
+                    "description": "The Vendor shall not distribute or disclose the Epit Specifications to any third party other than authorized Customers, and shall not post them publicly on the Internet. The Vendor shall ensure its personnel are aware of these obligations."
+                }
+            ]
+        },
+        {
+            "title": "Confidentiality of Other Epit Information",
+            "instruction": "Verify obligations to avoid accessing Epit software or other materials, and to maintain confidentiality if such access occurs.",
+            "description": "The Vendor acknowledges that it shall not access any Epit software licensed by an Epit customer, any instructions, manuals, eLearning materials, or the Epit UserWeb (collectively, the 'Other Epit Information'), except as expressly permitted. The Vendor shall take all necessary precautions to prevent inadvertent access. If the Vendor or its personnel does have, has had, or in the future receives any access to Other Epit Information, the Vendor shall maintain strict confidentiality regarding the design, functionality, operation, source code, data structures, and implementation of Epit software, and shall not disclose, publish, or use such information for any purpose.",
+            "fallbacks": [
+                {
+                    "title": "Confidentiality of Other Epit Information - General",
+                    "instruction": "Accept a general confidentiality obligation if accidental access occurs, without an express prohibition on accessing Other Epit Information.",
+                    "description": "If the Vendor obtains access to any Epit software or related materials, the Vendor shall keep such information confidential and shall not disclose or use it outside the scope of the Purpose."
+                }
+            ]
+        },
+        {
+            "title": "Ownership of Specifications and Submissions",
+            "instruction": "Confirm Epit retains ownership of the Specifications, defines Submission license rights, and addresses Work made for hire assignment to the Customer.",
+            "description": "The Epit Specifications shall remain the sole and exclusive property of Epit. Any feedback, suggestions, ideas, or other materials provided by the Vendor to Epit ('Submissions') shall be licensed to Epit on a royalty-free, perpetual, worldwide basis, with the right to copy, distribute, modify, sublicense, and commercially exploit the Submission. Any work product, documentation, code, or other tangible materials created by the Vendor using the Specifications ('Works') shall be deemed a 'work made for hire' under Section 101 of the U.S. Copyright Act of 1976 and shall be assigned to the Customer. The Vendor shall retain only a limited, non-exclusive license to use the Works to support or maintain them for the Customer.",
+            "fallbacks": [
+                {
+                    "title": "Ownership of Specifications and Submissions - Simplified",
+                    "instruction": "Accept Epit ownership of Specifications and a non-exclusive license to Submissions, without the work-made-for-hire assignment to Customer.",
+                    "description": "Epit retains ownership of the Specifications. Any Submissions provided by the Vendor to Epit are licensed to Epit on a royalty-free, non-exclusive basis. The Vendor retains ownership of its own Works, subject to applicable Customer agreements."
+                }
+            ]
+        },
+        {
+            "title": "Term, Renewal, and Termination Notice",
+            "instruction": "Verify the initial term is twelve (12) months with auto-renewal, and that termination requires thirty (30) days prior written notice.",
+            "description": "The initial term of this Agreement shall begin on the Effective Date and continue for twelve (12) months. The term shall automatically renew for successive twelve (12) month periods unless either party provides written notice of its intent not to renew prior to the expiration of the then-current term. Either party may terminate this Agreement at any time by providing thirty (30) days prior written notice to the other party. Upon termination, the Vendor shall promptly destroy or return all copies of the Specifications, provided that the Vendor may retain a reasonable number of copies for one (1) year following termination solely to support existing Customer interfaces or integrations.",
+            "fallbacks": [
+                {
+                    "title": "Term, Renewal, and Termination Notice - Extended",
+                    "instruction": "Accept up to sixty (60) days prior written notice for termination.",
+                    "description": "Either party may terminate this Agreement at any time by providing sixty (60) days prior written notice to the other party. All other term and renewal provisions remain unchanged."
+                },
+                {
+                    "title": "Term, Renewal, and Termination Notice - Maximum",
+                    "instruction": "Accept up to ninety (90) days prior written notice for termination as a final fallback position.",
+                    "description": "Either party may terminate this Agreement at any time by providing ninety (90) days prior written notice to the other party. All other term and renewal provisions remain unchanged."
+                }
+            ]
+        },
+        {
+            "title": "Return or Destruction of Specifications",
+            "instruction": "Confirm procedures for return or destruction of the Specifications upon termination or written request, including written certification.",
+            "description": "Upon Epit's written request, or upon the termination or expiration of this Agreement, the Vendor shall promptly return to Epit or, at Epit's option, destroy all materials, documents, information, and other data concerning the Specifications, including all originals, copies, reproductions, and summaries thereof, in any form or medium. The Vendor shall provide written certification of such return or destruction within thirty (30) days of the request or termination. The Vendor may retain a reasonable number of copies for one (1) year following termination solely to support existing Customer interfaces or integrations, after which all remaining copies shall be destroyed or returned.",
+            "fallbacks": [
+                {
+                    "title": "Return or Destruction of Specifications - No Certification Required",
+                    "instruction": "Accept return or destruction obligations without requiring written certification.",
+                    "description": "Upon Epit's written request or upon termination of this Agreement, the Vendor shall return or destroy all materials concerning the Specifications. The Vendor may retain copies for up to one (1) year for Customer support purposes."
+                }
+            ]
+        },
+        {
+            "title": "Warranties and Limitation of Liability",
+            "instruction": "Evaluate the AS-IS disclaimer, exclusion of express and implied warranties, and limitation of liability for damages.",
+            "description": "The Specifications are provided 'AS-IS' without warranty of any kind. Epit disclaims all express and implied warranties, including but not limited to warranties of merchantability, accuracy, fitness for a particular purpose, and non-infringement, and any warranty that the Specifications will be error-free, uninterrupted, meet the Vendor's requirements, or function with the Vendor's software or any version of the Epit software. Except to the extent prohibited by applicable law, Epit shall not be liable for any direct, indirect, incidental, consequential, special, punitive, or exemplary damages arising out of or relating to this Agreement, the Vendor's use of the Specifications, or the Vendor's software, regardless of whether Epit has been advised of the possibility of such damages.",
+            "fallbacks": [
+                {
+                    "title": "Warranties and Limitation of Liability - Mutual",
+                    "instruction": "Accept AS-IS warranty disclaimer with mutual limitation of liability for both parties.",
+                    "description": "The Specifications are provided 'AS-IS' without warranty. Neither party shall be liable to the other for any indirect, incidental, consequential, special, or punitive damages arising under this Agreement, except in cases of gross negligence, willful misconduct, or breach of confidentiality."
+                }
+            ]
+        },
+        {
+            "title": "Remedies and Indemnification",
+            "instruction": "Verify the availability of injunctive relief without bond and the Vendor's indemnification obligations to Epit and its affiliates.",
+            "description": "The Vendor acknowledges that monetary damages may be inadequate for any breach of this Agreement, and Epit shall be entitled to seek injunctive relief without notice or bond, both of which are hereby waived, in addition to all other remedies available at law or in equity. The Vendor agrees to indemnify, defend, and hold harmless Epit and its subsidiaries, affiliates, officers, agents, employees, and customers from and against any third-party claim arising from or related to the Vendor's use, licensing, marketing, sale, offer for sale, or implementation of the Vendor's software in connection with Epit's software.",
+            "fallbacks": [
+                {
+                    "title": "Remedies and Indemnification - Bond Required",
+                    "instruction": "Accept injunctive relief but require Epit to post a reasonable bond.",
+                    "description": "Epit shall be entitled to seek injunctive relief in any court of competent jurisdiction, subject to posting a reasonable bond. The Vendor shall indemnify Epit for third-party claims arising from the Vendor's software."
+                }
+            ]
+        },
+        {
+            "title": "Governing Law and Jurisdiction",
+            "instruction": "Ensure the choice of law is the State of Texas (where Epit is headquartered) and exclusive venue is Dallas County, Texas.",
+            "description": "This Agreement shall be governed by and construed in accordance with the laws of the State of Texas, without regard to its conflict of laws principles. Any action arising under or in connection with this Agreement shall be brought exclusively in the federal or state courts located in Dallas County, Texas. The parties consent to the personal jurisdiction of such courts and irrevocably waive any objection based on inconvenient forum.",
+            "fallbacks": [
+                {
+                    "title": "Governing Law and Jurisdiction - Delaware",
+                    "instruction": "Accept Delaware as governing law with venue in New Castle County, Delaware.",
+                    "description": "This Agreement shall be governed by the laws of the State of Delaware, without regard to its conflict of laws principles. Any action shall be brought exclusively in the federal or state courts located in New Castle County, Delaware."
+                },
+                {
+                    "title": "Governing Law and Jurisdiction - New York",
+                    "instruction": "Accept New York as governing law with venue in New York County, New York as a final fallback.",
+                    "description": "This Agreement shall be governed by the laws of the State of New York, without regard to its conflict of laws principles. Any action shall be brought exclusively in the federal or state courts located in New York County, New York."
+                }
+            ]
+        },
+        {
+            "title": "Assignment, Entire Agreement, and Amendment",
+            "instruction": "Verify assignment restrictions, the integration clause, and the requirement that amendments be in writing and signed by both parties.",
+            "description": "The Vendor shall not assign or transfer this Agreement, in whole or in part, without the prior written consent of Epit, and any purported assignment without such consent shall be null and void. This Agreement constitutes the entire agreement between the parties with respect to the subject matter hereof and supersedes all prior and contemporaneous agreements, negotiations, representations, and understandings, whether written or oral. This Agreement may not be amended or modified except by a written instrument signed by authorized representatives of both parties. If any provision is held invalid or unenforceable, the remaining provisions shall continue in full force and effect.",
+            "fallbacks": [
+                {
+                    "title": "Assignment, Entire Agreement, and Amendment - Affiliates Permitted",
+                    "instruction": "Accept assignment to affiliates or successors in connection with merger or acquisition without prior consent.",
+                    "description": "The Vendor may assign this Agreement to an affiliate or to a successor in connection with a merger, acquisition, or sale of all or substantially all of its assets, without Epit's prior written consent, provided that the assignee assumes all obligations under this Agreement. All other amendment and integration provisions remain unchanged."
+                }
+            ]
+        }
+    ]
+}
