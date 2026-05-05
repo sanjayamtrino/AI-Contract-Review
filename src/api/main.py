@@ -4,6 +4,11 @@ FastAPI application entry point.
 Sets up middleware, registers routers, and manages the application lifecycle.
 """
 
+import os
+
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 import time
 from contextlib import asynccontextmanager
 
