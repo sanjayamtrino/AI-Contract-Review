@@ -176,7 +176,7 @@ async def review_document(session_id: str, request: RuleCheckRequest, force_upda
             missing_clauses=None,
         )
 
-    agent_cache = session_data.tool_results.get(AGENT_NAME, {})
+    # agent_cache = session_data.tool_results.get(AGENT_NAME, {})
     # # Key by (title, rule_type) to preserve multiple rule variants (primary, fallback, fallback2, etc.)
     # cached_reviews: Dict[Tuple[str, str], PlayBookReviewResponse] = {(r.rule_title, r.rule_type): r for r in agent_cache.get("rules_review", [])}
 
