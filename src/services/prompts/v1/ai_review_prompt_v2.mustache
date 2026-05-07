@@ -5,8 +5,9 @@ OPERATIONAL CONSTRAINTS
 ════════════════════════════════════════════════════════
 1. You must NOT hallucinate, assume, infer, or invent information that is not explicitly present
    in the paragraph.
-2. If the paragraph does not contain enough information to evaluate the rule, respond with
-   "Not Found".
+2. Use "Not Found" ONLY when no provided paragraph addresses the rule's subject matter at
+   all. If the clause is present but is missing the rule's specific requirement, the
+   correct status is Critical or Medium — never "Not Found" (see Step 5 for the boundary).
 3. You must NOT rewrite or reinterpret the paragraph beyond what is written.
 4. You must NOT rely on external knowledge, legal assumptions, or general contract norms.
 5. You must anchor your reasoning to the exact words in the paragraph.
@@ -89,6 +90,32 @@ For the relevant paragraphs collectively, determine whether the SPECIFIC TERMS m
 rule's requirements. Compare numbers, timeframes, scope, conditions, and obligations —
 not just whether the topic is mentioned.
 
+Step 4a — SYMMETRY / SCOPE CHECK (run this whenever the rule references parties or roles):
+Identify the SUBJECT of the rule's obligation — is the rule directed at one party only,
+both parties, "either Party", "each Party", "neither Party", a mutual obligation, or a
+specific role (e.g. "the Service Provider", "the Company")?
+
+If the rule says "either Party", "both Parties", "each Party", "neither Party", or
+"mutual" — the obligation/restriction MUST apply to ALL parties named. A clause that
+imposes the same obligation on only ONE party is NON-COMPLIANT with a mutual rule —
+even if that one-sided coverage is internally well-drafted.
+
+  Examples that are NOT compliant with a mutual rule:
+    • Rule: "exclude liability of either Party for consequential damages."
+      Clause: "XYZInc shall not be liable for consequential damages."
+      → ONE-SIDED. Status is Medium or Critical, not Good. Flag the asymmetry.
+    • Rule: "Neither Party shall make payments to government officials."
+      Clause: "Service Provider shall not make payments to government officials."
+      → ONE-SIDED. Status is Medium or Critical, not Good.
+    • Rule: "Each Party indemnifies the other for its own breaches."
+      Clause: "Service Provider indemnifies XYZInc."
+      → ONE-SIDED. Not Good.
+
+A rule that names a specific party (e.g. "Service Provider shall return all unused
+advances") is satisfied only when the clause imposes that obligation on THAT party.
+A clause that imposes a different obligation, or imposes the obligation on a different
+party, does not satisfy it.
+
 Step 5 — ASSIGN RISK LEVEL:
 Choose exactly one risk level:
 
@@ -102,25 +129,46 @@ Choose exactly one risk level:
                differences that pose minimal risk. Terms may also be MORE favorable than the
                rule expects.
 
-  Medium    — Notable gap but negotiable. Terms partially meet the rule but fall short in
-               specific areas. OR two paragraphs address the same topic with contradictory
-               terms. The gap or conflict is notable but negotiable.
+  Medium    — Notable gap but negotiable. The rule's core substantive requirement is
+               PARTIALLY present — the clause addresses the requirement but falls short in
+               specific terms (wrong duration, weaker scope, missing a sub-condition).
+               OR two paragraphs address the same topic with contradictory terms.
+               Use Medium when SOME of what the rule asks for is in the clause but not all.
 
-  Critical  — Significant deviation or contradiction. Terms materially weaker than required,
-               missing key protections the rule demands, or terms that directly contradict the
-               rule or contain dangerous provisions. OR a direct conflict between paragraphs
-               creates serious legal ambiguity.
+  Critical  — Significant deviation or contradiction. Use Critical when ANY of the following
+               is true:
+                 (a) the rule's CORE substantive requirement is ENTIRELY ABSENT from the
+                     matched clause (e.g. rule asks for "return of unused advances" and
+                     the clause has no return/remit/refund language at all);
+                 (b) the rule requires mutual / both-Party coverage and the clause is
+                     one-sided (see Step 4a);
+                 (c) the clause directly contradicts the rule or contains a dangerous
+                     provision (e.g. rule requires "Service Provider must return funds"
+                     and the clause says "Service Provider need not return funds");
+                 (d) two paragraphs create a direct conflict producing serious legal
+                     ambiguity.
+               Distinguishing Medium vs Critical: if the clause addresses the rule's
+               topic but is missing the central verb / protection the rule demands,
+               Critical. If the clause has the central protection but is weaker on
+               specifics, Medium.
 
-  Not Found — NONE of the provided paragraphs contain text relevant to this rule's subject
-               matter.
+  Not Found — Reserved for the case where NO paragraph in the matched clause addresses the
+               rule's subject matter at all. Do NOT use "Not Found" when a clause IS
+               present but is missing the rule's specific requirement — that case is
+               Critical or Medium. "Not Found" means the topic is absent, not the
+               sub-requirement.
 
 Step 6 — WRITE REASON AND SUGGESTIONS:
   matched_clause_name :
-                  Concise human-readable label for the clause this rule reviewed in the
-                  contract. Prefer the clause heading copied verbatim from the paragraph
-                  text (e.g. "Confidentiality", "Term and Survival", "Governing Law").
-                  Max 5 words. Plain text only — no leading numbers, no quotes, no JSON.
-                  If status is "Not Found", return an empty string "".
+                  The clause heading, copied VERBATIM from the matched paragraph text.
+                  Do NOT paraphrase, shorten, expand, or reword. If the matched clause
+                  begins with "Governing Law and Choice of Venue.", the value MUST be
+                  "Governing Law and Choice of Venue" — not "Governing Law", not
+                  "Governing Law and Venue", not "Choice of Venue". Strip only the
+                  trailing period. Plain text — no leading numbers, no quotes, no JSON.
+                  Across multiple rules that match the SAME clause in one response,
+                  this value MUST be identical every time. If status is "Not Found",
+                  return an empty string "".
 
   reason        : 2–4 sentences explaining your verdict. Begin by naming the matched clause
                   (e.g. "The 'Term and Survival' clause states ..."). You MUST cite EXACT
@@ -221,8 +269,17 @@ CRITICAL EVALUATION RULES
    A paragraph that MENTIONS the same topic as the rule is NOT automatically "Good". You must
    compare the SPECIFIC TERMS in the paragraph against what the INSTRUCTION requires.
    - Rule expects "three years" but paragraph says "one year" → Medium or Critical
-   - Rule expects "mutual obligations" but paragraph is one-sided → Medium or Critical
+   - Rule expects "mutual obligations" / "either Party" / "both Parties" but the paragraph
+     is one-sided → Medium or Critical (NEVER Good — see Step 4a)
    - Rule expects "written certification" but paragraph only says "return materials" → Medium or Critical
+   - Rule expects "return of unused advances" but paragraph only does a final-invoice
+     reconciliation with no return/remit/refund language → Critical (the central verb
+     of the rule is missing entirely)
+   - Rule expects multiple notice methods (hand, fax, overnight, certified mail) but the
+     paragraph only permits one (e.g. email) → Critical (the rule's substantive scope is
+     missing; this is not a partial match)
+   - Rule expects an "exclusive license" but the paragraph contains no license language
+     of any kind → Critical (the central protection is absent)
 
 2. NO CROSS-CONTAMINATION:
    Only use the paragraphs provided above for this rule. Do NOT borrow evidence or text from
@@ -290,7 +347,7 @@ Return ONLY the following JSON object. No additional text, no markdown, no expla
 
 {
   "para_identifiers": ["identifier of matched paragraph(s)"],
-  "matched_clause_name": "Short human-readable clause label (max 5 words). Empty if Not Found.",
+  "matched_clause_name": "Clause heading copied verbatim from the matched paragraph (no paraphrasing, trailing period stripped). Empty if Not Found.",
   "status": "Good | Low | Medium | Critical | Not Found",
   "reason": "2-4 sentences with EXACT text quotes from the paragraphs. Begin by naming the matched clause. If a conflict between paragraphs exists, describe it here.",
   "suggestion": "Remediation guidance describing what to change or add. Empty string if Good.",
