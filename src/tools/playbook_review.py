@@ -37,29 +37,66 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9\s]", "", text.lower()).strip()
 
 
+# Strips fallback markers like " - Fallback 1", " – fallback2", " - Fallback Special"
+# off the end of a rule title. Permissive on dash type (-, –, —), spacing, and
+# what follows "Fallback" (digits, words, etc.) so playbook authors can use
+# whatever convention they like.
+_FALLBACK_SUFFIX_PATTERN = re.compile(
+    r"\s*[-–—]\s*[Ff]allback\b.*$"
+)
+
+
+def _canonical_title(title: str) -> str:
+    """Return the rule title with any '- Fallback N' suffix stripped.
+
+    Primary + fallback rule variants of the same clause share a canonical
+    title so they match the SAME contract paragraphs. Without this, a rule
+    titled 'Term/Termination - Fallback 1' would never match the contract's
+    'Term/Termination' heading and would fall through to full-document mode,
+    where the LLM picks paragraphs at its own discretion (non-deterministic).
+
+    Authors can also write fallbacks with the same bare title as the primary
+    (distinguishing them only by rule_type). In that case there is no suffix
+    to strip and this function is a no-op.
+    """
+    return _FALLBACK_SUFFIX_PATTERN.sub("", title).strip()
+
+
 def extract_clauses_from_paragraphs(textinformation: List[TextInfo], rule_titles: List[str]) -> Dict[str, List[TextInfo]]:
-    """Extracts clauses from the document paragraphs based on rule titles as boundaries."""
+    """Extract paragraphs grouped under each rule's canonical clause heading.
 
-    # normalized_title → original_title
-    normalized_titles: Dict[str, str] = {_normalize(t): t for t in rule_titles}
+    The returned map is keyed by *canonical title* (fallback suffix stripped),
+    so a primary rule and any number of its fallback variants resolve to the
+    SAME paragraph list when looked up.
+    """
 
-    # Initialize empty lists for every rule so callers always get a key
-    clause_map: Dict[str, List[TextInfo]] = {title: [] for title in rule_titles}
+    # canonical_title → list of original rule titles (for the warn log)
+    canonical_titles: Dict[str, List[str]] = {}
+    for t in rule_titles:
+        canonical_titles.setdefault(_canonical_title(t), []).append(t)
+
+    # normalized canonical title → canonical title (used for paragraph matching)
+    normalized_titles: Dict[str, str] = {
+        _normalize(canonical): canonical for canonical in canonical_titles
+    }
+
+    # Initialize empty lists per canonical title so callers always get a key
+    clause_map: Dict[str, List[TextInfo]] = {canonical: [] for canonical in canonical_titles}
     current_clause: Optional[str] = None
 
     for para in textinformation:
         para_norm = _normalize(para.text)
         matched_title: Optional[str] = None
 
-        for norm_title, original_title in normalized_titles.items():
+        for norm_title, canonical in normalized_titles.items():
             # Exact match — standalone header paragraph (Format B)
             if para_norm == norm_title:
-                matched_title = original_title
+                matched_title = canonical
                 break
 
             # Para starts with title — merged header+content (Format A)
             if para_norm.startswith(norm_title):
-                matched_title = original_title
+                matched_title = canonical
                 break
 
         if matched_title:
@@ -71,10 +108,16 @@ def extract_clauses_from_paragraphs(textinformation: List[TextInfo], rule_titles
             clause_map[current_clause].append(para)
         # else: paragraph appears before any recognized clause header — skip
 
-    # Warn on any rule whose clause was never found in the document
-    for title, paras in clause_map.items():
+    # Warn on any canonical title whose clause was never found in the document
+    for canonical, paras in clause_map.items():
         if not paras:
-            logger.warning("Clause extraction: no paragraphs found for rule '%s'. " "Rule will be evaluated against the full document as fallback.", title)
+            originals = canonical_titles.get(canonical, [canonical])
+            logger.warning(
+                "Clause extraction: no paragraphs found for canonical title '%s' "
+                "(rules: %s). These rules will be evaluated against the full "
+                "document as fallback.",
+                canonical, originals,
+            )
 
     return clause_map
 
@@ -111,9 +154,14 @@ async def get_missing_clauses(llm_model: AzureOpenAIModel, full_text: str, revie
 
 
 async def _process_rule(rule: RuleInfo, clause_map: Dict[str, List[TextInfo]], full_document: List[TextInfo], llm_model: AzureOpenAIModel) -> Tuple[Tuple[str, str], PlayBookReviewResponse]:
-    """Evaluates a single rule against its extracted clause paragraphs."""
+    """Evaluates a single rule against its extracted clause paragraphs.
 
-    matched_paras: List[TextInfo] = clause_map.get(rule.title, [])
+    Lookup is by canonical title so that primary + fallback1 + fallback2 + ...
+    of the same clause all evaluate against the SAME paragraph list. They
+    differ only in the LLM instruction sent for evaluation.
+    """
+
+    matched_paras: List[TextInfo] = clause_map.get(_canonical_title(rule.title), [])
 
     if not matched_paras:
         logger.warning(f"No extracted paragraphs for rule {rule.title}. Falling back to full document.")
@@ -152,8 +200,8 @@ async def _process_rule(rule: RuleInfo, clause_map: Dict[str, List[TextInfo]], f
             suggested_fix="",
         )
 
-    return (rule.title, rule.type or "primary"), PlayBookReviewResponse(
-        rule_type=rule.type or "primary",
+    return (rule.title, rule.rule_type or "primary"), PlayBookReviewResponse(
+        rule_type=rule.rule_type or "primary",
         rule_title=rule.title,
         rule_instruction=rule.instruction,
         rule_description=rule.description,
@@ -183,7 +231,7 @@ async def review_document(session_id: str, request: RuleCheckRequest, force_upda
     # # Determine which rules are stale and need re-evaluation
     # rules_to_update: List[RuleInfo] = []
     # for rule in request.rulesinformation:
-    #     cache_key = (rule.title, rule.type or "primary")
+    #     cache_key = (rule.title, rule.rule_type or "primary")
     #     cached = cached_reviews.get(cache_key)
     #     if not cached or rule.title in force_update_rules or cached.rule_description != rule.description or cached.rule_instruction != rule.instruction:
     #         rules_to_update.append(rule)
@@ -200,11 +248,16 @@ async def review_document(session_id: str, request: RuleCheckRequest, force_upda
     rules_to_update: List[RuleInfo] = request.rulesinformation
     cached_reviews: Dict[Tuple[str, str], PlayBookReviewResponse] = {}
 
-    # Extract clauses once for all stale rules
+    # Extract clauses once for all stale rules. The map is keyed by canonical
+    # title so that primary + fallback variants of one clause share paragraphs.
     rule_titles = [rule.title for rule in rules_to_update]
     clause_map = extract_clauses_from_paragraphs(request.textinformation, rule_titles)
 
-    logger.info(f"Clause extraction complete. {sum(1 for paras in clause_map.values() if paras)}/{len(rule_titles)} rules have matched paragraphs.")
+    matched_canonical = sum(1 for paras in clause_map.values() if paras)
+    logger.info(
+        "Clause extraction complete. %d/%d canonical clause titles have matched paragraphs (%d rules total).",
+        matched_canonical, len(clause_map), len(rule_titles),
+    )
 
     # Process stale rules concurrently
     updates: List[Tuple[Tuple[str, str], PlayBookReviewResponse]] = await asyncio.gather(

@@ -19,7 +19,7 @@ class RuleInfo(BaseModel):
     instruction: str = Field(..., description="Instruction for the rule")
     description: str = Field(..., description="Detailed description of the rule")
     tags: Optional[List[str]] = Field(None, description="List of tags for the rule")
-    type: Optional[str] = Field("Primary", description="Type of the rule, e.g., obligation, prohibition, etc.")
+    rule_type: Optional[str] = Field("primary", description="Rule variant: primary, fallback1, fallback2, etc. Distinguishes multiple rules that share the same title.")
 
 
 class TextInfo(BaseModel):

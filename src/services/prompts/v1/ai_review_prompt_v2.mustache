@@ -131,10 +131,23 @@ Step 6 — WRITE REASON AND SUGGESTIONS:
   suggestion    : If risk level is Low, Medium, Critical, or Not Found — describe what should
                   be changed or added. Plain prose. If Good, use empty string.
 
-  suggested_fix : The EXACT replacement clause text that must go into THIS specific
-                  contract for THIS specific rule. The user will substitute this string
-                  directly into the document without further editing — treat it like a
-                  surgical edit, not a template suggestion.
+  suggested_fix : The FULL replacement clause text that must go into THIS specific
+                  contract for THIS specific rule. Return the ENTIRE matched clause
+                  (the whole paragraph or section, not just the changed sentence) with
+                  all original wording preserved verbatim EXCEPT for the specific
+                  words, values, or sentences that must be corrected to satisfy the
+                  rule. The user will substitute this string in place of the original
+                  clause as a whole — so the output must read as a complete, standalone
+                  clause, not a one-line edit or a template fragment.
+
+                  LENGTH RULE:
+                  The suggested_fix MUST be at least as long as the original matched
+                  clause and contain every sentence/obligation that was in the
+                  original, with only the deviating term(s) changed. If the original
+                  clause was three sentences, your suggested_fix is three sentences.
+                  Returning a single sentence when the original clause has multiple
+                  sentences is a defect — the user would lose the surrounding
+                  obligations when they paste the fix in.
 
                   STRUCTURAL RULES — the value MUST be:
                     • a single self-contained block of clause text in the same legal
@@ -152,18 +165,26 @@ Step 6 — WRITE REASON AND SUGGESTIONS:
 
                   SPECIFICITY — NOT BOILERPLATE:
                   Generic boilerplate is a failure. The suggested_fix MUST address the
-                  specific deviation you cited in the reason field. Examples:
-                    • If the contract says "one (1) year" and the rule requires "three (3)
-                      years", the suggested_fix replaces that exact term in the contract's
-                      own wording, not a generic survival clause.
-                    • If the contract picks the wrong jurisdiction, the suggested_fix is
-                      the contract's own governing-law sentence rewritten with the
-                      correct jurisdiction — not a generic template clause.
-                    • If a required protection is missing, the suggested_fix is the
-                      additional sentence(s) that should be inserted, in the contract's
-                      voice, citing the contract's own defined terms.
-                  A reader should be able to drop your suggested_fix into the contract,
-                  remove the original deviating words, and have a clean, working clause.
+                  specific deviation you cited in the reason field while preserving the
+                  rest of the original clause. Examples (note: each example shows the
+                  FULL clause being returned, not just the changed words):
+                    • If the contract clause is "Confidentiality obligations under this
+                      Agreement shall survive for one (1) year following termination.
+                      The Receiving Party shall return all materials upon request." and
+                      the rule requires three (3) years, the suggested_fix is the WHOLE
+                      clause with the duration corrected: "Confidentiality obligations
+                      under this Agreement shall survive for three (3) years following
+                      termination. The Receiving Party shall return all materials upon
+                      request." — both sentences kept, only the term changed.
+                    • If the contract picks the wrong jurisdiction, return the full
+                      governing-law clause (every sentence of it) with only the
+                      jurisdiction corrected — not a one-line replacement.
+                    • If a required protection is missing, return the full original
+                      clause PLUS the additional sentence(s) inserted in place, in the
+                      contract's voice, citing the contract's own defined terms.
+                  A reader should be able to delete the entire original clause and
+                  paste your suggested_fix in its place to get a clean, complete,
+                  working clause with no further editing.
 
                   VERBATIM-VALUE RULE — NON-NEGOTIABLE:
                   Every concrete value the rule states (durations, day-counts, percentages,
@@ -181,8 +202,11 @@ Step 6 — WRITE REASON AND SUGGESTIONS:
                   Re-read the suggested_fix and confirm: (a) it does not start with any
                   meta-prefix; (b) it contains zero markdown or placeholders; (c) every
                   concrete value matches the rule verbatim; (d) it directly fixes the
-                  deviation cited in the reason field. If any check fails, rewrite it
-                  before returning.
+                  deviation cited in the reason field; (e) it contains the FULL matched
+                  clause — every sentence and obligation from the original is still
+                  present, with only the deviating term(s) corrected, and the length is
+                  at least as long as the original clause. If any check fails, rewrite
+                  it before returning.
 
                   If status is Good, return an empty string "".
                   If status is Not Found, return the full new clause text that should be
