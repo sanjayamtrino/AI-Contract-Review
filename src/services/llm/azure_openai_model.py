@@ -45,10 +45,37 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
 
         self.deployment_name = self.settings.azure_openai_responses_deployment_name
 
+        self._cumulative_prompt_tokens = 0
+        self._cumulative_completion_tokens = 0
+        self._call_count = 0
+
     def render_prompt_template(self, prompt: str, context: Dict[str, Any]) -> Any:
         """Mustache prompt template render function."""
 
         return pystache.render(template=prompt, context=context)
+
+    def _log_token_usage(self, response) -> None:
+        """Log per-call and cumulative token usage from an OpenAI response."""
+
+        if not getattr(response, "usage", None):
+            return
+
+        self._call_count += 1
+        prompt_t = response.usage.prompt_tokens
+        completion_t = response.usage.completion_tokens
+        total_t = response.usage.total_tokens
+
+        self._cumulative_prompt_tokens += prompt_t
+        self._cumulative_completion_tokens += completion_t
+        cumulative_total = self._cumulative_prompt_tokens + self._cumulative_completion_tokens
+
+        self.logger.info(
+            f"AZURE TOKENS [call {self._call_count}] - "
+            f"prompt: {prompt_t}, completion: {completion_t}, total: {total_t} | "
+            f"CUMULATIVE - prompt: {self._cumulative_prompt_tokens}, "
+            f"completion: {self._cumulative_completion_tokens}, "
+            f"total: {cumulative_total}"
+        )
 
     async def stream(self, prompt: str, context: Dict[str, Any]) -> Any:
         """Stream response generation function."""
@@ -109,6 +136,8 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
                     },
                 )
 
+                self._log_token_usage(response)
+
                 # Extract and parse the JSON response
                 response_text = response.choices[0].message.content
                 if response_text is None:
@@ -136,6 +165,9 @@ class AzureOpenAIModel(BaseLLMModel, Logger):
                     ],
                     temperature=0.2,
                 )
+
+                self._log_token_usage(response)
+
                 response_text = response.choices[0].message.content
                 if response_text is None:
                     raise EmptyResponseError("Received empty response from LLM model, try once more or debug the prompt.")
