@@ -1496,7 +1496,10 @@ class DocxParser(BaseParser, Logger):
         try:
             tables = []
             for t_idx, table in enumerate(document.tables):
-                rows = [[self._clean_text(cell.text) for cell in row.cells] for row in table.rows]
+                rows = [
+                    [self._clean_text(cell.text) if cell.text and cell.text.strip() else "" for cell in row.cells]
+                    for row in table.rows
+                ]
                 tables.append({"table_index": t_idx, "content": rows})
             return tables
         except Exception as e:

@@ -5,12 +5,14 @@ STRICT OPERATIONAL RULES
 ========================================================
 
 1. Base your analysis strictly on the clause text provided below. Do not invent content.
-2. Produce suggestions whenever the clause text contains wording that could be changed to better satisfy the reviewer's stated goal or preference — even if the clause is already partially favorable. If the reviewer expressed a preference (e.g., "we want X", "avoid Y", "make it more Z"), evaluate whether ANY wording in the clause could be improved to more fully serve that preference, and produce suggestions for those spans.
-3. Every suggestion's `original_text` MUST be an exact, verbatim, contiguous substring of the clause text — no paraphrasing, no ellipses, no reformatting.
-4. DO NOT suggest ADDING provisions to a clause when the provision belongs in a different clause. Example: if the reviewer asks for a liability cap and this clause is about payment terms, do not bolt a liability cap onto the payment terms clause.
-5. DO NOT produce suggestions for generic wrapper headings like "Terms and Conditions", "Agreement", "The parties agree as follows" — those are document-level headers, not clauses that own any legal topic.
-6. Return `{"suggestions": []}` ONLY when: the reviewer's instruction is clearly about a different legal topic than the clause, the specific content the reviewer asked about is not present in the clause at all, or the clause is a wrapper header (e.g. "Terms and Conditions", "Agreement"). Do NOT return empty just because the clause is "already partially favorable" — if any wording could be changed to better serve the reviewer's stated preference, produce a suggestion for it. Do NOT narrate absences.
-7. Respond ONLY with valid JSON matching the schema at the bottom of this prompt.
+2. Produce a suggestion whenever the clause text contains wording that could be changed to better satisfy the reviewer's stated goal or preference — even if the clause is already partially favorable. If the reviewer expressed a preference (e.g., "we want X", "avoid Y", "make it more Z"), evaluate whether ANY wording in the clause could be improved to more fully serve that preference.
+3. Every suggestion's `original_text` MUST be the ENTIRE clause text exactly as provided below — copied verbatim, character-for-character, including every sentence and obligation. No paraphrasing, no ellipses, no reformatting, no trimming to just the problematic sentence.
+4. The `suggested_fix` MUST be the FULL rewritten clause — same length and structure as the original, with every original sentence/obligation preserved, and ONLY the specific words, values, or sentences that need to change actually changed. Returning just the changed sentence is a defect.
+5. Produce AT MOST ONE suggestion object per clause. Consolidate all required changes into that single full-clause `suggested_fix`. Do NOT emit multiple suggestion objects for different spans inside the same clause.
+6. DO NOT suggest ADDING provisions to a clause when the provision belongs in a different clause. Example: if the reviewer asks for a liability cap and this clause is about payment terms, do not bolt a liability cap onto the payment terms clause.
+7. DO NOT produce suggestions for generic wrapper headings like "Terms and Conditions", "Agreement", "The parties agree as follows" — those are document-level headers, not clauses that own any legal topic.
+8. Return `{"suggestions": []}` ONLY when: the reviewer's instruction is clearly about a different legal topic than the clause, the specific content the reviewer asked about is not present in the clause at all, or the clause is a wrapper header (e.g. "Terms and Conditions", "Agreement"). Do NOT return empty just because the clause is "already partially favorable" — if any wording could be changed to better serve the reviewer's stated preference, produce a suggestion for it. Do NOT narrate absences.
+9. Respond ONLY with valid JSON matching the schema at the bottom of this prompt.
 
 ========================================================
 REVIEWER INSTRUCTION
@@ -39,28 +41,43 @@ Read the clause carefully. Identify the obligations, rights, conditions, timefra
 Step 2 — CHECK APPLICABILITY:
 Is the clause on-topic for the reviewer's instruction? If the clause is about a different legal topic, or the content the reviewer asked about is simply not present, return an empty suggestions array. Otherwise, proceed to Step 3 — even if the clause is already partially aligned with the reviewer's goal, look for wording that could be changed to better serve that goal. Do not reason out loud. Do not explain what the clause does not contain.
 
-Step 3 — BUILD SUGGESTIONS:
-For each distinct piece of clause text that genuinely needs to change, produce ONE suggestion object with:
+Step 3 — BUILD ONE SUGGESTION FOR THE WHOLE CLAUSE:
+If any wording in the clause needs to change, produce EXACTLY ONE suggestion object for the entire clause with:
 - `clause_title`: the title passed in above, verbatim.
-- `reason`: a plain-language justification grounded in the clause text, telling the reviewer WHY this text should change. Quote or reference specific words from the clause. Keep it focused and actionable (1–3 sentences).
-- `original_text`: the exact, verbatim, contiguous substring of the clause text that you want replaced. This must be copy-pasted from the clause text above, character-for-character. Do NOT paraphrase, summarize, or abbreviate.
-- `suggested_fix`: the replacement text that resolves the issue.
+- `reason`: a plain-language justification grounded in the clause text, telling the reviewer WHY the clause needs to change. Quote or reference the specific words from the clause that are being altered. Keep it focused and actionable (1–3 sentences). If multiple parts of the clause are being changed, name each one.
+- `original_text`: the ENTIRE clause text exactly as provided in the "Clause Text" section above, copied verbatim character-for-character. This is the whole paragraph/section, NOT a one-sentence excerpt. Do NOT paraphrase, summarize, or abbreviate. Do NOT pick out only the sentence that is changing — copy the whole clause body.
+- `suggested_fix`: the FULL rewritten clause text. Return the ENTIRE clause (every sentence and obligation that was in the original), with all original wording preserved verbatim EXCEPT for the specific words, values, or sentences that must be corrected to satisfy the reviewer's instruction.
 
-Do NOT produce multiple suggestions for the same span of text. Do NOT produce suggestions whose `original_text` is not actually present in the clause text.
+LENGTH RULE (NON-NEGOTIABLE):
+The `suggested_fix` MUST be at least as long as the `original_text` and contain every sentence/obligation that was in the original clause, with only the deviating term(s) changed. If the original clause was three sentences, your `suggested_fix` is three sentences. Returning a single sentence — or only the changed sentence — when the original clause has multiple sentences is a defect: the user would lose the surrounding obligations when they paste the fix in.
+
+STRUCTURAL RULES — the `suggested_fix` value MUST be:
+- a single self-contained block of clause text in the same legal register as the contract;
+- drafted to fit the surrounding contract — same defined terms, same party names that already appear in the clause text;
+- free of any prefix like "Suggested:", "Consider:", "Replace with:", "Here is the fix:", "Recommended clause:";
+- free of markdown, bullet lists, headings, JSON, code fences, backticks, asterisks, or quotation marks wrapping the whole block;
+- free of placeholder tokens like "[Party Name]", "[Date]", "[Insert ...]", "<...>" — use the ACTUAL party names, dates, and defined terms that appear in the clause text above.
+
+FINAL CHECK before returning — confirm that:
+(a) `original_text` is the WHOLE clause text, copied verbatim;
+(b) `suggested_fix` contains the FULL clause — every sentence and obligation from the original is still present, with only the deviating term(s) corrected;
+(c) `suggested_fix` is at least as long as `original_text`;
+(d) there is at most ONE suggestion object in the array.
+If any check fails, rewrite the suggestion before returning.
 
 ========================================================
 OUTPUT FORMAT
 ========================================================
 
-Return ONLY the following JSON object:
+Return ONLY the following JSON object (the suggestions array contains AT MOST ONE object):
 
 {
   "suggestions": [
     {
       "clause_title": "{{clause_title}}",
-      "reason": "Plain-language justification grounded in the clause text.",
-      "original_text": "exact verbatim substring of the clause text",
-      "suggested_fix": "proposed replacement text"
+      "reason": "Plain-language justification grounded in the clause text, naming the specific wording being changed.",
+      "original_text": "the ENTIRE clause text copied verbatim from the Clause Text section above — the whole paragraph, every sentence, character-for-character",
+      "suggested_fix": "the FULL rewritten clause text — every sentence and obligation from the original is still present, only the deviating term(s) corrected. Length is at least as long as original_text."
     }
   ]
 }
