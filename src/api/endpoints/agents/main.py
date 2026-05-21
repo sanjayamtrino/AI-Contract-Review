@@ -1,30 +1,26 @@
 import io
-import json
 from typing import Any
 
 from docx import Document
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, UploadFile
 
 from src.api.session_utils import get_session_id
-from src.dependencies import get_service_container
 from src.schemas.contract_analyzer import ContractAnalyzerResponse
-from src.schemas.describe_and_draft import DraftRequest, DraftResponse
+from src.schemas.describe_draft import DescribeDraftRequest, DescribeDraftResponse
 from src.schemas.doc_chat import DocChatResponse
 from src.schemas.general_review import GeneralReviewRequest, GeneralReviewResponse
 from src.schemas.playbook_review import (
     PlayBookReviewFinalResponse,
     RuleCheckRequest,
-    RuleInfo,
 )
 from src.tools.comparision import run as compare_documents_service
-from src.tools.describe_and_draft import draft_document as draft_document_service
+
+# from src.tools.describe_and_draft import draft_document as draft_document_service
 from src.tools.doc_chat import query_document as query_document_service
+from src.tools.drafter import generate_describe_draft
 from src.tools.general_review import clause_review, full_document_review
 from src.tools.key_information import (
     get_key_information_document as contract_analyzer_service,
-)
-from src.tools.new_playbook_review import (
-    playbook_review_service as new_playbook_review_service,
 )
 from src.tools.playbook_review import review_document as playbook_review_service
 
@@ -47,23 +43,6 @@ async def playbook_review_endpoint(request: RuleCheckRequest, session_id: str = 
     """Run playbook validation checks."""
 
     review_result = await playbook_review_service(session_id=session_id, request=request)
-    return review_result
-
-
-@router.post("/new-playbook-review", response_model=PlayBookReviewFinalResponse)
-async def new_playbook_review_endpoint(request: str = Form(...), document: UploadFile = File(...), session_id: str = Header(..., alias="X-Session-Id")):
-    """Run playbook validation checks using the new clause extraction method."""
-
-    request = RuleCheckRequest(**json.loads(request))
-
-    document_content = Document(io.BytesIO(await document.read()))
-
-    # Get session data from session manager
-    service_container = get_service_container()
-    session_data = service_container.session_manager.get_session(session_id)
-
-    review_result = await new_playbook_review_service(request=request, document=document_content, session_data=session_data)
-
     return review_result
 
 
@@ -109,12 +88,29 @@ async def query_document_endpoint(query: str, session_id: str = Depends(get_sess
     return llm_result
 
 
-@router.post("/draft", response_model=DraftResponse)
-async def draft_document_endpoint(request: DraftRequest, session_id: str = Depends(get_session_id)) -> DraftResponse:
-    """Draft the document/clause  for the user given query."""
+@router.post("/generate", response_model=DescribeDraftResponse)
+async def generate_draft(request: DescribeDraftRequest = Body(...), session_id: str = Depends(get_session_id)) -> DescribeDraftResponse:
+    """
+    Accept a free-text drafting prompt and return one drafted clause, a full clause
+    list for an agreement type, or a clarification question. Session memory preserves
+    agreement context across calls.
 
-    result = await draft_document_service(request, session_id)
-    return result
+    When `regenerate=true`, the agent improves on the previous single-clause draft
+    stored for this session instead of producing a fresh draft. When
+    `target_clause_title` is also supplied, the agent regenerates that specific
+    clause (by title) from the last list_of_clauses or single_clause response.
+
+    Domain errors (validation_failed, llm_failed, etc.) are returned as HTTP 200 with
+    status="error" in the response body. HTTP 4xx/5xx are reserved for missing headers
+    or truly unexpected failures.
+    """
+    return await generate_describe_draft(
+        prompt=request.prompt,
+        session_id=session_id,
+        regenerate=request.regenerate,
+        target_clause_title=request.target_clause_title,
+        ignore_document=request.ignore_document,
+    )
 
 
 # @router.post("/generate-nda-headings")
