@@ -14,13 +14,13 @@ BASE_URL = "http://localhost:8000"
 ENDPOINT = f"{BASE_URL}/api/v1/describe-draft/generate"
 
 
-def _post(prompt: str, session_id: str, regenerate: bool = False) -> dict:
+def _post(prompt: str, session_id: str, use_document_context: bool = False) -> dict:
     """Make a synchronous POST request and return the parsed JSON body."""
     try:
         import requests
         body = {"prompt": prompt}
-        if regenerate:
-            body["regenerate"] = True
+        if use_document_context:
+            body["use_document_context"] = True
         resp = requests.post(
             ENDPOINT,
             json=body,
@@ -85,32 +85,12 @@ def test_e2e_single_clause_mode():
 
     assert data["status"] == "ok", f"Expected ok, got: {data}"
     assert data["mode"] == "single_clause"
-    assert len(data["versions"]) == 1
-    v = data["versions"][0]
+    assert data["clause"] is not None
+    v = data["clause"]
     assert v["title"].strip(), "title must not be empty"
     assert v["summary"].strip(), "summary must not be empty"
     assert v["drafted_clause"].strip(), "drafted_clause must not be empty for single_clause mode"
     assert data["disclaimer"] is not None
-    assert data["clarification_question"] is None
-    assert data.get("regenerated", False) is False
-
-
-def test_e2e_single_clause_regenerate_returns_different_draft():
-    """After a single_clause draft, regenerate=true returns a different draft and flags regenerated=true."""
-    session_id = f"e2e-regen-{uuid.uuid4()}"
-    first = _post("Draft a confidentiality clause", session_id)
-    assert first["status"] == "ok"
-    assert first["mode"] == "single_clause"
-    assert len(first["versions"]) == 1
-    first_clause = first["versions"][0]["drafted_clause"]
-
-    second = _post("Draft a confidentiality clause", session_id, regenerate=True)
-    assert second["status"] == "ok", f"Regenerate failed: {second}"
-    assert second["mode"] == "single_clause"
-    assert len(second["versions"]) == 1
-    assert second.get("regenerated") is True, "Response must flag regenerated=true"
-    assert second["versions"][0]["drafted_clause"] != first_clause, \
-        "Regenerated draft must differ from the original"
 
 
 def test_e2e_list_of_clauses_mode():
@@ -121,23 +101,11 @@ def test_e2e_list_of_clauses_mode():
     assert data["status"] == "ok", f"Expected ok, got: {data}"
     assert data["mode"] == "list_of_clauses"
     assert len(data["clauses"]) >= 12
-    assert data.get("versions") in (None, [])
+    assert data.get("clause") is None
     for c in data["clauses"]:
         assert c["title"].strip(), "title must not be empty"
         assert c["summary"].strip(), "summary must not be empty"
     assert data["disclaimer"] is not None
-
-
-def test_e2e_clarification_mode():
-    """POST with an ambiguous prompt returns mode=clarification with a question and no versions."""
-    session_id = f"e2e-clarify-{uuid.uuid4()}"
-    data = _post("help", session_id)
-
-    # Clarification is expected but not guaranteed for all LLMs — accept either ok or clarification
-    assert data["status"] in ("ok", "error"), f"Unexpected status: {data}"
-    if data["mode"] == "clarification":
-        assert data["clarification_question"] is not None
-        assert len(data.get("versions", [])) == 0
 
 
 def test_e2e_response_has_correct_shape():
@@ -148,7 +116,7 @@ def test_e2e_response_has_correct_shape():
     assert "session_id" in data
     assert "mode" in data
     assert "status" in data
-    assert "versions" in data
+    assert "clause" in data
     assert data["session_id"] == session_id
 
 
@@ -203,8 +171,8 @@ def test_e2e_banned_phrases_absent_in_response():
     if data["status"] != "ok" or data["mode"] != "single_clause":
         pytest.skip("Response not in single_clause mode — skipping banned phrase check")
 
-    assert len(data["versions"]) == 1
-    v = data["versions"][0]
+    assert data["clause"] is not None
+    v = data["clause"]
     lower = v["drafted_clause"].lower()
     for phrase in BANNED:
-        assert phrase not in lower, f"Banned phrase '{phrase}' found in version titled '{v['title']}'"
+        assert phrase not in lower, f"Banned phrase '{phrase}' found in clause titled '{v['title']}'"

@@ -125,7 +125,7 @@ Clauses already drafted in this session (do not re-draft these; rely on cross-re
 TASK: {{mode_instruction}}
 
 {{#has_doc_grounding}}
-DOCUMENT CONTEXT: A contract has been uploaded to this session. The drafted clause MUST be drop-in ready for that contract — no placeholders, no square-bracket party tokens.
+DOCUMENT CONTEXT: A contract has been uploaded to this session. Use the EXACT party names and governing law extracted from the document — do NOT wrap party identities, role labels, or the governing-law / jurisdiction in placeholders. For values the user must supply that are NOT in the uploaded document (specific amounts, effective dates, durations, cure periods, notice periods), use standard `[ALL CAPS]` placeholder tokens.
 
 Parties (use these EXACT names; do not invent or abbreviate):
 {{doc_parties_block}}
@@ -153,31 +153,7 @@ Placeholder style (use EXACTLY this format):
 PARTY NAMING RULE for no-document mode: even when the agreement type implies role labels (Tenant, Landlord, Employer, Employee, Vendor, Customer, Disclosing Party, Receiving Party), the SPECIFIC NAME still goes in a `[PLACEHOLDER]` token. Use the role label naturally in the prose (`the Tenant shall pay rent on the first day of each month`), and reserve the placeholder for the fillable name (`[TENANT NAME]`, `[LANDLORD NAME]`). For most clauses this means at least one party-name placeholder appears. The only clauses that may legitimately contain ZERO placeholders are pure boilerplate with no fillable facts (Severability, Entire Agreement, Counterparts, basic Waiver). For every other clause, AT LEAST ONE placeholder is expected.
 {{/has_doc_grounding}}
 
-{{#is_regenerate}}
-REGENERATE MODE: The user already received the draft below and clicked REGENERATE because the previous version was not what they wanted. Produce ONE new version that is MATERIALLY DIFFERENT — a different legal approach, not a synonym swap.
-
-You MUST vary at least THREE of the following from the previous draft:
-  (1) overall STRUCTURE — number and order of sub-clauses, whether obligations are listed as a single paragraph vs. a numbered/lettered list.
-  (2) set of CARVE-OUTS and exceptions.
-  (3) REMEDIES and enforcement language (specific performance, injunctive relief, liquidated damages, indemnity, etc.).
-  (4) NOTICE / cure / survival periods.
-  (5) LENGTH and level of detail (substantially shorter or substantially longer — but never dropping below the QUALITY BAR).
-  (6) which party the clause TILTS toward, if the clause is asymmetric.
-
-Drafts that keep the previous structure and merely rephrase sentences, add a defined term, or append one more sentence will be rejected.
-
-{{#has_regenerate_angle}}
-ANGLE FOR THIS REGENERATION (apply this as the guiding approach — do NOT mention the angle in the title or summary):
-{{regenerate_angle}}
-{{/has_regenerate_angle}}
-
-Previous draft (title: "{{prior_draft_title}}"):
----
-{{prior_draft_clause}}
----
-{{/is_regenerate}}
-
-Generate ONE drafted version of THIS SINGLE CLAUSE. Only one version per call.
+Generate the drafted text for THIS SINGLE CLAUSE.
 
 Provide:
   - title: the clause name as it would appear in a real contract section heading (e.g. "Confidentiality", "Governing Law and Jurisdiction", "Limitation of Liability"). NOT a stylistic label.
@@ -186,7 +162,7 @@ Provide:
   - placeholders: list of distinct placeholder tokens used (empty list when doc grounding is active).
 
 HARD RULES (violations will cause a retry):
-- Exactly 1 version.
+- Return exactly one clause.
 - The drafted_clause MUST be at least 300 characters and substantively complete per the QUALITY BAR. A short, headline-only clause will be rejected.
 - No invented case law. Do not cite any court cases.
 - No statute or regulation citations unless the user explicitly named them in the request.
@@ -195,19 +171,16 @@ HARD RULES (violations will cause a retry):
 - Titles and summaries must describe the clause content, not stylistic axes (no "balanced version", "protective version", "version 1", etc.).
 - The summary must be a substantive 2-3 sentence brief, not a one-line label.
 {{#has_doc_grounding}}
-- Use the EXACT party names listed above. Do not substitute "Party A", "[CUSTOMER]", "the Company", or any placeholder form.
-- Do not change or contradict the governing law stated above.
-- Leave the `placeholders` field as an empty list.
+- Use the EXACT party names listed above. Do not substitute "Party A", "[CUSTOMER]", "the Company", or any placeholder form for the parties.
+- Do not change or contradict the governing law stated above; do not wrap it in a placeholder.
+- Factual placeholders for values not supplied by the document (e.g. `[SPECIFIED AMOUNT]`, `[EFFECTIVE DATE]`, `[NOTICE PERIOD]`, `[CURE PERIOD IN DAYS]`) are allowed. Populate the `placeholders` field with the distinct tokens actually used; if none, return an empty list.
 {{/has_doc_grounding}}
 {{^has_doc_grounding}}
 - STRONG PREFERENCE: the drafted_clause should contain at least one `[PLACEHOLDER]` token. Pure-boilerplate clauses with no fillable facts (Severability, Entire Agreement, Counterparts, basic Waiver) may omit them; every other clause is expected to use at least one placeholder per the PARTY NAMING RULE above.
 - Every placeholder used in the draft MUST appear once in the `placeholders` output array, in the exact `[ALL CAPS]` bracketed form.
 {{/has_doc_grounding}}
-{{#is_regenerate}}
-- The draft MUST be materially different from the previous draft above. Substantive changes to wording, structure, and emphasis — not a synonym swap.
-{{/is_regenerate}}
 
-Return ONLY valid JSON matching: {"versions": [{"title": "...", "summary": "...", "drafted_clause": "...", "placeholders": ["...", "..."]}]}
+Return ONLY valid JSON matching: {"clause": {"title": "...", "summary": "...", "drafted_clause": "...", "placeholders": ["...", "..."]}}
 No prose, no markdown.
 {{/is_single_clause}}
 
@@ -225,7 +198,7 @@ Each clause in the list must be a real, named clause for THIS specific agreement
 Every drafted_clause body in the list must independently satisfy the QUALITY BAR above. The list as a whole is a single coherent agreement: defined terms must be reused consistently across clauses, cross-references must be accurate, party names must be consistent.
 
 {{#has_doc_grounding}}
-DOCUMENT CONTEXT: A contract has been uploaded to this session. Each drafted_clause body MUST use the EXACT party names listed below and align with the governing law — no placeholders, no square-bracket tokens.
+DOCUMENT CONTEXT: A contract has been uploaded to this session. Each drafted_clause body MUST use the EXACT party names listed below and align with the governing law — do NOT wrap parties, role labels, or the governing-law / jurisdiction in placeholders. Factual placeholders for values not supplied by the document (specific amounts, effective dates, durations, cure / notice periods) are allowed.
 
 Parties (use these EXACT names; do not invent or abbreviate):
 {{doc_parties_block}}
@@ -268,8 +241,8 @@ HARD RULES (violations will cause a retry):
 - No archaic legalese in any summary or drafted body.
 - Every clause title is the name of a real clause — not an axis label.
 {{#has_doc_grounding}}
-- Every drafted_clause uses the EXACT party names above. No placeholders, no square-bracket tokens.
-- Leave the `placeholders` field as an empty list for every clause.
+- Every drafted_clause uses the EXACT party names above. Do not wrap party identities, role labels, or the governing-law / jurisdiction in placeholders.
+- Factual placeholders for values not supplied by the document (e.g. `[SPECIFIED AMOUNT]`, `[EFFECTIVE DATE]`, `[NOTICE PERIOD]`) are allowed. Populate each clause's `placeholders` field with the tokens it actually uses; return an empty list when none.
 {{/has_doc_grounding}}
 {{^has_doc_grounding}}
 - STRONG PREFERENCE: every drafted_clause should contain at least one `[PLACEHOLDER]` token. Even boilerplate clauses (Confidentiality, Entire Agreement, Severability, Notices) should reference `[PARTY A]` / `[PARTY B]` explicitly instead of using generic phrases like "each party". A small number of pure-boilerplate clauses may omit placeholders, but the majority of the list MUST use them.

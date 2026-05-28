@@ -2,7 +2,7 @@
 Describe & Draft endpoint router.
 
 POST /api/v1/describe-draft/generate
-  Body: DescribeDraftRequest (prompt: str)
+  Body: DescribeDraftRequest (prompt: str, use_document_context: bool)
   Header: X-Session-ID
   Response: DescribeDraftResponse
 """
@@ -25,23 +25,20 @@ async def generate_draft(
     session_id: str = Depends(get_session_id),
 ) -> DescribeDraftResponse:
     """
-    Accept a free-text drafting prompt and return one drafted clause, a full clause
-    list for an agreement type, or a clarification question. Session memory preserves
-    agreement context across calls.
+    Accept a free-text drafting prompt and return one drafted clause (single_clause)
+    or a full clause list for an agreement type (list_of_clauses), each with a summary.
 
-    When `regenerate=true`, the agent improves on the previous single-clause draft
-    stored for this session instead of producing a fresh draft. When
-    `target_clause_title` is also supplied, the agent regenerates that specific
-    clause (by title) from the last list_of_clauses or single_clause response.
+    `use_document_context` mirrors the "Use Document Context" checkbox: when true the
+    draft is grounded in the document opened on this session (its real parties and
+    governing law); when false (default) any attached document is ignored and a
+    [PLACEHOLDER] template is produced from the prompt alone.
 
-    Domain errors (validation_failed, llm_failed, etc.) are returned as HTTP 200 with
-    status="error" in the response body. HTTP 4xx/5xx are reserved for missing headers
-    or truly unexpected failures.
+    Domain errors (validation_failed, llm_failed, document_required, etc.) are returned
+    as HTTP 200 with status="error" in the response body. HTTP 4xx/5xx are reserved for
+    missing headers or truly unexpected failures.
     """
     return await run_describe_draft_agent(
         prompt=request.prompt,
         session_id=session_id,
-        regenerate=request.regenerate,
-        target_clause_title=request.target_clause_title,
-        ignore_document=request.ignore_document,
+        use_document_context=request.use_document_context,
     )
